@@ -1,8 +1,6 @@
-export const GET_AUTH = 'GET_AUTH';
-export const ADD_AUTH = 'ADD_AUTH';
-export const REMOVE_AUTH = 'REMOVE_AUTH';
+import { GET_AUTH } from "../constants";
 
-export const get_auth = () => {
+export const getAuth = () => {
     try {
         return async (dispatch: (arg0: { type?: string; payload?: boolean; }) => void) => {
             const response = true;
@@ -14,4 +12,8 @@ export const get_auth = () => {
     }catch(error){
     console.log(error)       
     }
+}
+
+export const Connect = () => {
+
 }
