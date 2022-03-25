@@ -1,4 +1,4 @@
-import { GET_AUTH } from "./actions";
+import { GET_AUTH } from "../constants";
 
 const initailState = {
     auth: false

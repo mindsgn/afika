@@ -3,20 +3,20 @@ import { Text, View, } from 'react-native';
 import { container } from '../style/container';
 import { text } from '../style/text';
 import { RootStateOrAny, useSelector, useDispatch } from 'react-redux';
-import { get_auth } from '../redux/actions';
+import { getAuth } from '../redux/actions';
 
 const Load = ({ navigation } : { navigation: any }) => {
   const { auth } = useSelector((state: RootStateOrAny) => state.authReducer ); 
   const dispatch = useDispatch();
-  const getAuth = () => dispatch(get_auth());
+  const getAuthState = () => dispatch(getAuth());
   
   React.useEffect(() => {
     console.log(auth);
-    getAuth();
+    getAuthState();
   },[auth]);
 
   return (
-    <View 
+    <View
         style={container.default}>
         <Text
             style={text.logo}>
