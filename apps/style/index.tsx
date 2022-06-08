@@ -1,4 +1,4 @@
-export { button } from './button';
-export { text } from './text';
-export { container } from './container';
-export { input } from './input';
+export { button } from './button.style';
+export { text } from './text.style';
+export { container } from './container.style';
+export { input } from './input.style';

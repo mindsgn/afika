@@ -2,8 +2,9 @@
   package="seni.tembe.orbyt">
 
     <uses-permission android:name="android.permission.INTERNET" />
-
+    
     <application
+      android:usesCleartextTraffic="true"
       android:name=".MainApplication"
       android:label="@string/app_name"
       android:icon="@mipmap/ic_launcher"
@@ -25,10 +26,6 @@
           <category android:name="android.intent.category.DEFAULT" />
           <category android:name="android.intent.category.BROWSABLE" />
           <data android:scheme="orbyt" />
-          <data android:scheme="https" android:host="orbyt.org" />
-          <data android:scheme="http" android:host="orbyt.org" />
-          <data android:scheme="https" android:host="www.orbyt.org" />
-          <data android:scheme="http" android:host="www.orbyt.org" />
         </intent-filter>
       </activity>
     </application>
