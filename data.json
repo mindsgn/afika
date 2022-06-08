@@ -1,0 +1,56 @@
+{
+    "_bodyBlob": 
+        {
+            "_data": 
+                {
+                    "__collector": [Object], 
+                    "blobId": "5e3ea90f-4ea1-4ef8-8498-852f0a3743fb", 
+                    "offset": 0, 
+                    "size": 79861
+                }
+        }, 
+    "_bodyInit": 
+        {
+                    "_data": 
+                        {
+                            "__collector": [Object], 
+                            "blobId": 
+                            "5e3ea90f-4ea1-4ef8-8498-852f0a3743fb", 
+                            "offset": 0, 
+                            "size": 79861
+                        }
+                }, 
+            "bodyUsed": false, 
+            "headers": 
+                {
+                    "map": 
+                        {
+                            "accept-ch": "Sec-CH-UA,Sec-CH-UA-Mobile,Sec-CH-UA-Platform,Sec-CH-UA-Arch,Sec-CH-UA-Full-Version-List,Sec-CH-UA-Model,Sec-CH-Device-Memory", 
+                            "access-control-allow-headers": "Origin, X-Requested-With, Content-Type, Accept, Authorization", 
+                            "access-control-allow-methods": "POST, PUT, DELETE, GET, OPTIONS", 
+                            "access-control-allow-origin": "*", 
+                            "access-control-expose-headers": "link, per-page, total", 
+                            "access-control-request-method": "*", 
+                            "alternate-protocol": "443:npn-spdy/2", 
+                            "cache-control": "public, max-age=300", 
+                            "cf-cache-status": "EXPIRED", 
+                            "cf-ray": "7179a101eaeb9ce3-JNB", 
+                            "content-type": "application/json; charset=utf-8", 
+                            "date": "Tue, 07 Jun 2022 13:10:37 GMT", 
+                            "etag": "W/\"53104794be817e720dd2e5ea8278f902\"", 
+                            "expect-ct": "max-age=604800, report-uri=\"https://report-uri.cloudflare.com/cdn-cgi/beacon/expect-ct\"", 
+                            "expires": "Tue, 07 Jun 2022 13:15:37 GMT", 
+                            "server": "cloudflare", 
+                            "set-cookie": "datadome=Qf-lyjc__YulPsZm6NnGttE0hkHsPsLGbXU6aFnmQkGwtyhrMwFo-zdJ.hBcgOVciTT~yC1es~JV~F.S6ProBSZU~ep_DkH4altPW0YrbSZTE9FNM5e5OuHnqvL_nd8; Max-Age=31536000; Domain=.coingecko.com; Path=/; Secure; SameSite=Lax", 
+                            "vary": "Accept-Encoding, Origin", 
+                            "x-datadome": "protected", 
+                            "x-request-id": "4cb5243e-5aab-4ecf-9279-03c033b7be22", 
+                            "x-runtime": "0.036243"
+                        }
+                }, 
+            "ok": true, 
+            "status": 200, 
+            "statusText": "", 
+            "type": "default", 
+            "url": "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=100&page=1&sparkline=false"
+        }

@@ -12,6 +12,10 @@ target 'orbyt' do
     :hermes_enabled => false
   )
 
+  pod 'react-native-splash-screen', :path => '../node_modules/react-native-splash-screen'
+
+  pod 'RNTextGradientView', :path => '../node_modules/react-native-text-gradient'
+
   target 'orbytTests' do
     inherit! :complete
     # Pods for testing

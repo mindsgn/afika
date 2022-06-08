@@ -4,6 +4,9 @@
 /__tests__
 .vscode
 .bundle
+.env
+__snapshots__
+
 # Xcode
 #
 build/
@@ -60,3 +63,7 @@ buck-out/
 
 # CocoaPods
 /ios/Pods/
+
+.env*
+!.env.project
+!.env.vault

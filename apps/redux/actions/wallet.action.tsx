@@ -1,70 +1,102 @@
 import { useWalletConnect } from '@walletconnect/react-native-dapp';
-import React from 'react'
-import { INCREMENT, DECREMENT, CONNECT, ERROR } from '../../constants';
+import React from 'react';
+import { CONNECT, ERROR, GET_COINGECKO } from '../../constants';
+import {COINGECKO_API} from "@env";
+import { connect } from 'react-redux';
 
 export const WalletAction = (props: any) => {
     const connector = useWalletConnect();
 
     const connectWallet = React.useCallback(async () => {
-        try{
-            console.log("connecting wallet");
-            connector.connect().then((success: any) => {
-                console.log("success: ", success)
-                props.dispatch({
-                    type: CONNECT,
-                    connected: true,
-                    address: success.accounts[0],
-                    chainId: success.chainId,
-                    peerId: success.peerId,
-                    peerMeta: success.peerMeta, 
+        try {
+            connector
+                .connect()
+                .then((success: any) => {
+                    props.dispatch({
+                        type: CONNECT,
+                        connected: true,
+                        address: success.accounts[0],
+                        chainId: success.chainId,
+                        peerId: success.peerId,
+                        peerMeta: success.peerMeta
+                    });
+                })
+                .catch((error) => {
+                    console.log(error);
+                    props.dispatch({
+                        type: ERROR,
+                        connected: false
+                    });
                 });
-            }).catch((error) => {
-                console.log("error: ", error)
-                props.dispatch({
-                    type: ERROR,
-                    connected: false,
-                });
-            });
-        }catch(error: any){
-            console.log("error connecting wallet");
+        } catch (error: any) {
             props.dispatch({
                 type: ERROR,
-                connected: false,
+                error: true
             });
         }
-    },[]);
+    }, []);
 
     const disconnectWallet = React.useCallback(async () => {
-        try{
-            console.log("disconnecting wallet");
-            connector.killSession().then((success: any) => {
-                console.log("success: ", success)
-                props.dispatch({
-                    type: CONNECT,
-                    connected: false,
-                    address: null,
-                    chainId: null,
-                    peerId: null,
-                    peerMeta: null
+        try {
+            console.log("disconnecting app")
+            connector
+                .killSession()
+                .then((success: any) => {
+                    props.dispatch({
+                        type: CONNECT,
+                        connected: false,
+                        address: '',
+                        chainId: null,
+                        peerId: null,
+                        peerMeta: null
+                    });
+                })
+                .catch((error) => {
+                    props.dispatch({
+                        type: ERROR,
+                        error: true
+                    });
                 });
-            }).catch((error) => {
-                console.log("error: ", error)
-                props.dispatch({
-                    type: ERROR,
-                });
-            });
-        }catch(error: any){
-            console.log("error connecting wallet");
+        } catch (error: any) {
             props.dispatch({
                 type: ERROR,
+                error: true
             });
         }
-    },[]);
+    }, []);
+
+    const removeError = () => {
+        props.dispatch({
+            type: ERROR,
+            error: false
+        });
+    };
+
+    const getMarketData = React.useCallback(async () => {
+        const response = await fetch(
+            `${COINGECKO_API}/markets?vs_currency=usd&order=market_cap_desc&per_page=10&page=1&sparkline=false`,
+            {
+                method: "GET"
+            }
+        )
+        .then((success) => {
+           return success.json();
+        }).catch(error => { 
+            return error;
+        });
+
+        props.dispatch({
+            type: GET_COINGECKO,
+            markets: response
+        });
+    }, []);
 
     return {
         connectWallet,
-        disconnectWallet
-    }
-}
-  
+        disconnectWallet,
+        removeError,
+        getMarketData
+    };
+};
+
 export default WalletAction;
