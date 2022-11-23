@@ -1,13 +1,39 @@
 import React from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, } from 'react-native';
 import { container } from '../../../style/container.style';
 import Card from '../../../components/card';
 import { connect } from 'react-redux';
 import { colors } from '../../../constants';
+import RPC from './../../../lib/rpc';
+import WalletAction from '../../../redux/actions/wallet.action';
 
-const Wallet = () => {
+const Wallet = (props: any) => {
+    const { privKey } = props;
+
+    const getChainId = async () => {
+        const networkDetails = await RPC.getChainId();
+        console.log(networkDetails)
+    };
+      
+    const sendTransaction = async () => {
+        const tx = await RPC.sendTransaction(privKey);
+        console.log(tx)
+    };
+      
+    const signMessage = async () => {
+        const message = await RPC.signMessage(privKey);
+        console.log(message)
+    };
+
+    React.useEffect( () => {
+        if(privKey){
+        //    getAccounts()
+        }
+    }, [privKey])
+
     return (
-        <View style={container.home}>
+        <View 
+            style={container.home}>
             <Card />
             <View
                 style={{
@@ -45,4 +71,12 @@ const Wallet = () => {
     );
 };
 
-export default Wallet;
+const mapStateToProps = (state: any, props: any) => {
+    return {
+        connected: state.connected,
+        privKey: state.privKey,
+        error: state.error
+    };
+};
+
+export default connect(mapStateToProps)(Wallet);

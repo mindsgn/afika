@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, SafeAreaView, FlatList } from 'react-native';
+import { View, Text, FlatList } from 'react-native';
 import { connect } from 'react-redux';
 import WalletAction from '../../../redux/actions/wallet.action';
 
@@ -27,7 +27,7 @@ const Markets = (props: any) => {
                     {
                      markets.map((data: any) => {
                         return(
-                            <SafeAreaView
+                            <View
                                 style={{
                                     margin: 5,
                                     padding: 10,
@@ -65,7 +65,7 @@ const Markets = (props: any) => {
                                 </View>
                                 <View>
                                 </View>
-                            </SafeAreaView>
+                            </View>
                         )
                      })   
                     }

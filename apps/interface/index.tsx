@@ -4,17 +4,25 @@ export interface Token {
     amount: number;
 }
 
+export interface User {
+    aggregateVerifier: string
+    dappShare: string
+    email: string
+    idToken: string
+    name: string
+    oAuthIdToken: string
+    profileImage: string
+    typeOfLogin: string
+    verifier: string
+    verifierId: string
+}
+
 export interface walletState {
-    connected?: boolean;
-    type?: string | null;
-    tokens?: Token[];
-    chainId?: number | null;
-    network?: string | null;
-    address?: string;
-    totalAmount?: number | null;
-    disabled?: boolean;
-    peerId?: string | null;
-    peerMeta?: any | null;
-    error?: boolean;
-    markets?: any;
+    connected?: boolean
+    ed25519PrivKey: string | null
+    privKey: string | null
+    sessionId:  string | null
+    user: User | null
+    error: boolean
+    auth: any
 }

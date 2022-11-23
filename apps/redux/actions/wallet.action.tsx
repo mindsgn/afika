@@ -1,69 +1,73 @@
 import { useWalletConnect } from '@walletconnect/react-native-dapp';
 import React from 'react';
-import { CONNECT, ERROR, GET_COINGECKO } from '../../constants';
-import {COINGECKO_API} from "@env";
-import { connect } from 'react-redux';
+import { CONNECT, DISCONNECT, ERROR, GET_COINGECKO } from '../../constants';
+import {COINGECKO_API, CLIENT_ID} from "@env";
+import Web3Auth, { LOGIN_PROVIDER, OPENLOGIN_NETWORK } from "@web3auth/react-native-sdk";
+import * as WebBrowser from "@toruslabs/react-native-web-browser";
+const scheme = 'orbyt';
+const resolvedRedirectUrl = `${scheme}://openlogin`;
 
 export const WalletAction = (props: any) => {
-    const connector = useWalletConnect();
-
-    const connectWallet = React.useCallback(async () => {
+    const connectWallet = React.useCallback(async() => {
         try {
-            connector
-                .connect()
-                .then((success: any) => {
-                    props.dispatch({
-                        type: CONNECT,
-                        connected: true,
-                        address: success.accounts[0],
-                        chainId: success.chainId,
-                        peerId: success.peerId,
-                        peerMeta: success.peerMeta
-                    });
-                })
-                .catch((error) => {
-                    console.log(error);
-                    props.dispatch({
-                        type: ERROR,
-                        connected: false
-                    });
-                });
+            const response = await new Web3Auth(WebBrowser, {
+                clientId: `${CLIENT_ID}`,
+                network: OPENLOGIN_NETWORK.TESTNET,
+            });
+
+            const info = await response.login({
+              loginProvider: LOGIN_PROVIDER.GOOGLE,
+              redirectUrl: resolvedRedirectUrl
+            });
+
+            props.dispatch({
+                type: CONNECT,
+                auth: response,
+                connected: true,
+                ed25519PrivKey: info.ed25519PrivKey,
+                privKey: info.privKey,
+                sessionId: info.sessionId,
+                user: info.userInfo
+            });
+            
         } catch (error: any) {
             props.dispatch({
-                type: ERROR,
+                type: error,
+                connected: false,
                 error: true
             });
         }
-    }, []);
+    },[]);
 
-    const disconnectWallet = React.useCallback(async () => {
+    const disconnectWallet = React.useCallback(async (auth: any) => {
+        console.log('response: ', auth)
         try {
-            console.log("disconnecting app")
-            connector
-                .killSession()
-                .then((success: any) => {
-                    props.dispatch({
-                        type: CONNECT,
-                        connected: false,
-                        address: '',
-                        chainId: null,
-                        peerId: null,
-                        peerMeta: null
-                    });
-                })
-                .catch((error) => {
-                    props.dispatch({
-                        type: ERROR,
-                        error: true
-                    });
-                });
+            //@ts-ignore
+            const response = await auth.logout();
+
+            
+
+            props.dispatch({
+                type: DISCONNECT,
+                connected: false,
+                auth: null,
+                ed25519PrivKey: null,
+                privKey: null,
+                sessionId: null,
+                user: null
+            });
         } catch (error: any) {
             props.dispatch({
-                type: ERROR,
-                error: true
+                type: DISCONNECT,
+                connected: false,
+                auth: null,
+                ed25519PrivKey: null,
+                privKey: null,
+                sessionId: null,
+                user: null
             });
         }
-    }, []);
+    },[]);
 
     const removeError = () => {
         props.dispatch({
@@ -95,7 +99,7 @@ export const WalletAction = (props: any) => {
         connectWallet,
         disconnectWallet,
         removeError,
-        getMarketData
+        getMarketData,
     };
 };
 

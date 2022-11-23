@@ -38,7 +38,9 @@ export const DefaultButton = ({
                 margin: 10,
                 flex: flex,
                 display: 'flex',
-                flexDirection: 'row'
+                flexDirection: 'row',
+                justifyContent: 'center',
+                width: '90%'
             }}
         >
             <Text

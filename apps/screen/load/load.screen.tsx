@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Animated } from 'react-native';
+import { View, Animated, } from 'react-native';
 import { container } from '../../style/container.style';
 import { connect } from 'react-redux';
 import SplashScreen from 'react-native-splash-screen';
@@ -31,7 +31,8 @@ export const Load = (props: any) => {
     }, [props.connected]);
 
     return (
-        <View style={container.default}>
+        <View 
+            style={container.default}>
             <View>
                 <Animated.Text
                     style={[

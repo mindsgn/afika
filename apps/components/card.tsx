@@ -2,9 +2,27 @@ import React from 'react';
 import { View, Text } from 'react-native';
 import { connect } from 'react-redux';
 import truncateAddress from './../hooks/truncateAddress';
+import RPC from './../lib/rpc';
 
 const Card = (props: any) => {
-    const { address } = props;
+    const { privKey } = props
+    const [ address, setAddress ] = React.useState<any>("")
+
+    const getAccounts = async () => {
+        const address = await RPC.getAccounts(privKey);
+        setAddress(address)
+    };
+      
+    const getBalance = async () => {
+        const balance = await RPC.getBalance(privKey);
+       
+    };
+
+    React.useEffect(() => {
+        getAccounts();
+        getBalance();
+    },[])
+
     return (
         <View
             style={{
@@ -56,7 +74,11 @@ const Card = (props: any) => {
 };
 
 const mapStateToProps = (state: any, props: any) => {
-    return { address: state.address };
+    return {
+        connected: state.connected,
+        privKey: state.privKey,
+        error: state.error
+    };
 };
 
 export default connect(mapStateToProps)(Card);

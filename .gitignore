@@ -6,6 +6,7 @@
 .bundle
 .env
 __snapshots__
+gradle.properties
 
 # Xcode
 #

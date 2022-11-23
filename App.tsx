@@ -15,9 +15,13 @@ import { Provider } from 'react-redux';
 import { PersistGate } from 'redux-persist/integration/react';
 
 import Load from './apps/screen/load/load.screen';
-import Onboarding from './apps/screen/onboarding/onboarding.screen';
+import { 
+    Create, 
+    Import, 
+    Onboarding } from './apps/screen/onboarding'
 import Home from './apps/screen/home';
 import Error from './apps/screen/error/error.screen';
+import SignIn from './apps/screen/onboarding/signin/signin.screen'
 import { store, persistor } from './apps/redux/store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'react-native';
@@ -36,12 +40,29 @@ const App: React.FC = () => {
                             headerShown: false
                         }}
                     >
-                        <Stack.Screen name="Load" component={Load} />
-                        <Stack.Screen name="Home" component={Home} />
-                        <Stack.Screen name="Error" component={Error} />
+                        <Stack.Screen 
+                            name="Load" 
+                            component={Load} 
+                        />
+                        <Stack.Screen
+                            name="Home" 
+                            component={Home} 
+                        />
+                        <Stack.Screen
+                            name="Error" 
+                            component={Error} 
+                        />
                         <Stack.Screen
                             name="Onboarding"
                             component={Onboarding}
+                        />
+                        <Stack.Screen
+                            name="Create"
+                            component={Create}
+                        />
+                        <Stack.Screen
+                            name="SignIn"
+                            component={SignIn}
                         />
                     </Stack.Navigator>
                 </NavigationContainer>
