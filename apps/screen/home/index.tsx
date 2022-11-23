@@ -22,6 +22,13 @@ const Main = () => {
                 }}
             />
             <Tab.Screen
+                name="NFTS"
+                component={Markets}
+                options={{
+                    tabBarIcon: () => <Icon name="podium" size={20} />
+                }}
+            />
+            <Tab.Screen
                 name="Markets"
                 component={Markets}
                 options={{

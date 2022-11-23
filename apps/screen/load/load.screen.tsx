@@ -2,12 +2,15 @@ import React from 'react';
 import { View, Animated, } from 'react-native';
 import { container } from '../../style/container.style';
 import { connect } from 'react-redux';
+import WalletAction from '../../redux/actions/wallet.action';
 import SplashScreen from 'react-native-splash-screen';
+
 SplashScreen.show();
 
 export const Load = (props: any) => {
-    const { connected, navigation } = props;
+    const { connected, navigation, markets } = props;
     const progress = React.useRef(new Animated.Value(0)).current;
+    const { getMarketData } =  WalletAction(props)
 
     const isConnected = async () => {
         Animated.timing(progress, {
@@ -15,11 +18,18 @@ export const Load = (props: any) => {
             useNativeDriver: true
         }).start();
         if (connected) {
-            navigation.navigate('Home');
+            await getMarketData();
         } else {
             navigation.navigate('Onboarding');
         }
     };
+
+    React.useEffect(() => {
+        if(markets){
+            navigation.navigate('Home');
+            console.log(markets)
+        }
+    },[markets])
 
     React.useEffect(() => {
         SplashScreen.hide();
@@ -54,7 +64,7 @@ export const Load = (props: any) => {
 };
 
 const mapStateToProps = (state: any, props: any) => {
-    return { connected: state.connected };
+    return { connected: state.connected, markets: state.markets };
 };
 
 export default connect(mapStateToProps)(Load);

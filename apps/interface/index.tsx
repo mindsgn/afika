@@ -25,4 +25,5 @@ export interface walletState {
     user: User | null
     error: boolean
     auth: any
+    markets: any
 }

@@ -9,7 +9,8 @@ const initialState: walletState = {
     sessionId:  null,
     user: null,
     error: false,
-    auth: null
+    auth: null,
+    markets: []
 };
 
 export default (state = initialState, action: any) => {
@@ -20,9 +21,10 @@ export default (state = initialState, action: any) => {
                 connected: action.connected,
                 ed25519PrivKey: action.ed25519PrivKey,
                 privKey: action.privKey,
-                sessionId: action.sessionId,
+                sessionId:  action.sessionId,
                 user: action.user,
-                auth: action.auth
+                error: action.error,
+                auth: action.auth,
             };
         case DISCONNECT:
             return {
@@ -35,12 +37,13 @@ export default (state = initialState, action: any) => {
         };
         case GET_COINGECKO:
             return {
-                ...state
+                ...state,
+                markets: action.markets                
             };
         case ERROR:
             return {
                 ...state,
-                error: action.error
+               action
             };
         default:
             return state;

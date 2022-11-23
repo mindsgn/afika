@@ -3,23 +3,12 @@ import { View, Text, FlatList, Image, ScrollView } from 'react-native';
 import { connect } from 'react-redux';
 import WalletAction from '../../../redux/actions/wallet.action';
 
-const Markets = (props: any) => {
+const NFTS = (props: any) => {
     const { markets } = props;
     
     React.useEffect(() => {
     //    getMarketData();
     }, []);
-
-    const isPositive = (number: string) => {
-        if(number.indexOf('-') === 0){
-            return false
-        }
-        return true
-    }
-
-    const roundOff = (number: number) => {
-        return number.toFixed(2) 
-    }
 
     return (
         <View
@@ -46,7 +35,7 @@ const Markets = (props: any) => {
                                     display: 'flex',
                                     flexDirection:'row',
                                     alignItems: 'center',
-                                    justifyContent: 'space-between',
+                                    justifyContent: 'flex-start',
                                     elevation: 20,
                                     shadowColor: '#000000',
                                 }}>
@@ -54,7 +43,6 @@ const Markets = (props: any) => {
                                     style={{
                                         display: 'flex',
                                         flexDirection:'row',
-                                        alignItems: 'center',
                                         borderRadius: 20
                                     }}>
                                     <Image
@@ -78,33 +66,14 @@ const Markets = (props: any) => {
                                         <Text
                                             style={{
                                                 fontFamily: 'SF-Pro-Rounded-Bold',
-                                                fontSize: 18,
-                                                marginTop: -20,
-                                                color: 'grey'   
-                                            }}>
-                                            {data.symbol}
-                                        </Text>
-                                    </View>
-                                </View>
-                                <View
-                                    >
-                                        <Text
-                                                style={{
-                                                fontFamily: 'SF-Pro-Rounded-Bold',
                                                 color:'black',
                                                 fontSize: 21,
                                             }}>
-                                            {`$ ${roundOff(data.current_price)}`}
+                                            {`$ ${data.current_price}`}
                                         </Text>
-                                        <Text
-                                                style={{
-                                                fontFamily: 'SF-Pro-Rounded-Bold',
-                                                color: `${isPositive(`${data.market_cap_change_percentage_24h}`) ? "green" :  "red"}`,
-                                                fontSize: 21,
-                                                marginTop: -20
-                                            }}>
-                                            {`${roundOff(data.market_cap_change_percentage_24h)} %`}
-                                        </Text>
+                                    </View>
+                                </View>
+                                <View>
                                 </View>
                             </View>
                         )
@@ -138,4 +107,4 @@ const mapStateToProps = (state: any, props: any) => {
     return { markets: state.markets };
 };
 
-export default connect(mapStateToProps)(Markets);
+export default connect(mapStateToProps)(NFTS);

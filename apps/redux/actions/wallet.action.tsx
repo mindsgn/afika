@@ -45,8 +45,6 @@ export const WalletAction = (props: any) => {
             //@ts-ignore
             const response = await auth.logout();
 
-            
-
             props.dispatch({
                 type: DISCONNECT,
                 connected: false,
@@ -84,14 +82,21 @@ export const WalletAction = (props: any) => {
             }
         )
         .then((success) => {
-           return success.json();
+           success.json().then((data)=> {
+                console.log(data)
+                props.dispatch({
+                    type: GET_COINGECKO,
+                     markets: data
+                }); 
+           })
+          
         }).catch(error => { 
-            return error;
-        });
-
-        props.dispatch({
-            type: GET_COINGECKO,
-            markets: response
+            console.log(error)
+            props.dispatch({
+                type: GET_COINGECKO,
+                markets: [],
+                error: true
+            });
         });
     }, []);
 
