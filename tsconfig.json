@@ -12,17 +12,17 @@
         "noEmit": true,
         "strict": true,
         "target": "esnext",
-        "baseUrl": "./apps",
+        "baseUrl": ".",
         "resolveJsonModule": true,
         "paths": {
-            "@env": ["node_modules/react-native-dotenv"]
+            "@env": ["node_modules/react-native-dotenv"],
         }
     },
-    "include": ["./apps/**/*"],
+    "include": ["./src/**/*"],
     "exclude": [
+        "android",
+        "ios",
         "node_modules",
-        "./node_modules",
-        "./node_modules/**/*",
         "babel.config.js",
         "metro.config.js",
         "jest.config.js"
