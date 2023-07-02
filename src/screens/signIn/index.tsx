@@ -13,22 +13,8 @@ import { connect } from 'react-redux';
 import { style } from './style';
 
 const SignIn = (props: any) => {
-  const {
-    connected,
-    navigation,
-    marketTokenList,
-    privKey,
-    address,
-    providerUrl,
-    settings,
-  } = props;
-  const {
-    connectWithWeb3Auth,
-    getChainId,
-    getAccount,
-    getTokenList,
-    getMarketList,
-  } = WalletAction(props);
+  const { connected, navigation, privKey, providerUrl } = props;
+  const { connectWithWeb3Auth, getChainId, getAccount } = WalletAction(props);
   const progress = React.useRef(new Animated.Value(0)).current;
   const scale = React.useRef(new Animated.Value(0)).current;
 

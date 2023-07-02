@@ -31,6 +31,7 @@ const initialState: walletState = {
   networkName: null,
   networkID: null,
   ens: null,
+  tokens: [],
   providerUrl: 'https://rpc.ankr.com/eth',
   walletTokenList: [],
   marketTokenList: [],

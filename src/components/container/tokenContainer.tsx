@@ -6,12 +6,14 @@ import { WalletAction } from '@orbyt/redux';
 import React from 'react';
 import { View, Text, Animated } from 'react-native';
 import { connect } from 'react-redux';
+import { tokens } from './../../constants/tokens';
 
 const TokenContainer = (props: any) => {
   const opacity = React.useRef(new Animated.Value(0)).current;
   const [mounted, setMounted] = React.useState<any>(false);
   const [loading, setLoading] = React.useState<boolean>(true);
-  const { walletTokenList, currency, currencySymbol, providerUrl } = props;
+  const { walletTokenList, currency, currencySymbol, providerUrl, settings } =
+    props;
 
   function slideUp() {
     Animated.timing(opacity, {
@@ -29,9 +31,7 @@ const TokenContainer = (props: any) => {
     setMounted(true);
   }, [mounted]);
 
-  React.useEffect(() => {
-    // getTokenList(address, settings);
-  }, [providerUrl]);
+  React.useEffect(() => {}, [providerUrl, settings]);
 
   return (
     <Animated.View

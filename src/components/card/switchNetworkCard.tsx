@@ -7,10 +7,17 @@ import React from 'react';
 import { View, TouchableOpacity, Text, Animated, Image } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { connect } from 'react-redux';
+import { start } from 'repl';
 
 const SwitchNetworkCard = (props: any) => {
-  const { switchNetwork, providerUrl, settings, address, marketTokenList } =
-    props;
+  const {
+    switchNetwork,
+    providerUrl,
+    settings,
+    address,
+    marketTokenList,
+    currency,
+  } = props;
   const { updateSwitchNetwork } = AnimationAction(props);
   const { getTokenList, getChainId, switchToNetwork } = WalletAction(props);
   const cardOpacity = React.useRef(new Animated.Value(0)).current;
@@ -45,7 +52,8 @@ const SwitchNetworkCard = (props: any) => {
   }, [switchNetwork]);
 
   React.useEffect(() => {
-    getTokenList(address, settings, marketTokenList);
+    console.log(address);
+    getTokenList(address, settings, currency);
     getChainId(providerUrl);
   }, [providerUrl]);
   return (
@@ -140,6 +148,7 @@ const mapStateToProps = (state: any) => {
     settings: state.wallet.settings,
     address: state.wallet.address,
     marketTokenList: state.wallet.marketTokenList,
+    currency: state.wallet.currency,
   };
 };
 

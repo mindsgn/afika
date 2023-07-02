@@ -2,6 +2,7 @@
 import { ETHLogo, MaticLogo } from '@orbyt/assets';
 //@ts-ignore
 import { AnimationAction, WalletAction } from '@orbyt/redux';
+import { getAddress } from 'ethers/lib/utils';
 import React from 'react';
 import { View, Text, Animated, TouchableOpacity } from 'react-native';
 import { connect } from 'react-redux';
@@ -15,9 +16,12 @@ const WalletCard = (props: any) => {
     privKey,
     providerUrl,
     totalBalance,
+    settings,
+    currency,
   } = props;
   const { updateSwitchNetwork } = AnimationAction(props);
-  const { getChainId, getAccount, setBalance } = WalletAction(props);
+  const { getChainId, getAccount, setBalance, getBalance, getTokenList } =
+    WalletAction(props);
   const [mounted, setMounted] = React.useState<boolean>(false);
   const [total, setTotal] = React.useState<number>(0);
   const cardOpacity = React.useRef(new Animated.Value(0)).current;
@@ -42,6 +46,10 @@ const WalletCard = (props: any) => {
     getAccount(privKey);
     setMounted(true);
   }, [mounted]);
+
+  React.useEffect(() => {
+    getTokenList(address, settings, currency);
+  }, [networkID]);
 
   return (
     <Animated.View
@@ -126,6 +134,7 @@ const mapStateToProps = (state: any) => {
     providerUrl: state.wallet.providerUrl,
     settings: state.wallet.settings,
     totalBalance: state.wallet.totalBalance,
+    tokens: state.wallet,
   };
 };
 

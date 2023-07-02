@@ -1,5 +1,5 @@
 //@ts-ignore
-import { COINGECKO_API, WEB3_CLIENT_ID } from '@env';
+import { COINGECKO_API_V3, WEB3AUTH_CLIENT_ID } from '@env';
 import {
   CONNECT,
   DISCONNECT,
@@ -26,6 +26,8 @@ import '@ethersproject/shims';
 import { Buffer } from 'buffer';
 import { Contract, ethers } from 'ethers';
 import React from 'react';
+import { tokens } from '../../constants/tokens';
+import { AnyMxRecord } from 'dns';
 
 global.Buffer = global.Buffer || Buffer;
 
@@ -36,8 +38,8 @@ export const WalletAction = (props: any) => {
   const connectWithWeb3Auth = async () => {
     try {
       const response = await new Web3Auth(WebBrowser, {
-        clientId: `${WEB3_CLIENT_ID}`,
-        network: OPENLOGIN_NETWORK.CYAN,
+        clientId: `${WEB3AUTH_CLIENT_ID}`,
+        network: `${OPENLOGIN_NETWORK.CYAN}`,
       });
 
       const info = await response.login({
@@ -221,6 +223,18 @@ export const WalletAction = (props: any) => {
     []
   );
 
+  const getBalance = async (address: string, settings: any) => {
+    try {
+      const alchemy = new Alchemy(settings);
+      // Get token balances
+      const balances = await alchemy.core.getTokenBalances(address);
+
+      console.log(`The balances of ${address} address are:`, balances);
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
   const updateBalance = (sum: boolean, amount: number) => {
     if (sum) {
       props.dispatch({
@@ -242,54 +256,150 @@ export const WalletAction = (props: any) => {
     });
   };
 
-  const getTokenList = React.useCallback(
-    async (address: string, settings: any) => {
-      try {
-        const alchemy = await new Alchemy(settings);
-        const balances = await alchemy.core.getTokenBalances(address);
+  const getNativeToken = async (network: string) => {
+    switch (network) {
+      case 'polygon-mumbai':
+        return {
+          name: 'matic',
+          symbol: 'polygon',
+        };
+      case 'polygon-mainnet':
+        return {
+          name: 'matic',
+          symbol: 'polygon',
+        };
+      case 'eth-goerli':
+        return {
+          name: 'ethereum',
+          symbol: 'eth',
+        };
+      case 'eth-mainnet':
+        return {
+          name: 'ethereum',
+          symbol: 'eth',
+        };
+      default:
+        return null;
+    }
+  };
 
-        const nonZeroBalances = balances.tokenBalances.filter((token: any) => {
-          return (
-            token.tokenBalance !==
-            '0x0000000000000000000000000000000000000000000000000000000000000000'
-          );
-        });
+  const getNativeBalance = async (settings: any, address: string) => {
+    try {
+      const results = await getNativeToken(settings.network);
+      const alchemy = await new Alchemy(settings);
+      const nativeBalance = await alchemy.core.getBalance(address, 'latest');
+      const balance = ethers.utils.formatEther(nativeBalance);
 
-        const array: any[] = [];
-
-        for await (const token of nonZeroBalances) {
-          let balance: any = token.tokenBalance;
-
-          // Get metadata of token
-          const metadata = await alchemy.core.getTokenMetadata(
-            token.contractAddress
-          );
-
-          balance = balance / Math.pow(10, parseFloat(`${metadata.decimals}`));
-
-          array.push({
-            name: `${metadata.name}`,
-            balance: `${balance}`,
-            symbol: `${metadata.symbol}`,
-            logo: `${metadata.logo}`,
-            contactAddress: token.contractAddress,
-            fiatAmount: '0.00',
-          });
-        }
-
-        props.dispatch({
-          type: GET_TOKEN_LIST,
-          walletTokenList: array,
-        });
-      } catch (error) {
-        props.dispatch({
-          type: ERROR,
-          error,
-        });
+      if (results) {
+        await getTokenData(results.name);
       }
-    },
-    []
-  );
+      return null;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const isVerified = (keyword: string) => {
+    keyword = keyword.toLowerCase();
+
+    for (const token of tokens) {
+      const name = token.name.toLowerCase();
+      if (token.possibleName) {
+        const possibleNames = token.possibleName.map((n) => n.toLowerCase());
+        if (name.includes(keyword) || possibleNames.includes(keyword)) {
+          if (token.verified) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  };
+
+  const searchTokensByName = (keyword: string) => {
+    keyword = keyword.toLowerCase();
+    let results = [];
+
+    for (const token of tokens) {
+      const name = token.name.toLowerCase();
+      if (token.possibleName) {
+        const possibleNames = token.possibleName.map((n) => n.toLowerCase());
+        if (name.includes(keyword) || possibleNames.includes(keyword)) {
+          if (token.verified) {
+            results.push(token);
+          }
+        }
+      }
+    }
+
+    return results;
+  };
+
+  const getTokenData = async (token: string) => {
+    const results: null | any = await searchTokensByName(token);
+    let data = null;
+
+    if (results.length > 0) {
+      const { id } = results[0];
+      data = await fetch(`${COINGECKO_API_V3}/coins/${id}`, {
+        method: 'GET',
+      })
+        .then((success) => {
+          success.json().then(async (results) => {
+            return results;
+          });
+        })
+        .catch((error) => {
+          return null;
+        });
+    }
+
+    return data;
+  };
+
+  const getTokenList = async (
+    address: string,
+    settings: any,
+    currency: string
+  ) => {
+    try {
+      const array: any[] = [];
+      const alchemy = await new Alchemy(settings);
+      const balances = await alchemy.core.getTokenBalances(address);
+
+      const nonZeroBalances = balances.tokenBalances.filter((token: any) => {
+        return (
+          token.tokenBalance !==
+          '0x0000000000000000000000000000000000000000000000000000000000000000'
+        );
+      });
+
+      const data = await getNativeBalance(settings, address);
+      console.log('data', data);
+
+      for await (const token of nonZeroBalances) {
+        let balance: any = token.tokenBalance;
+
+        // Get metadata of token
+        const metadata = await alchemy.core.getTokenMetadata(
+          token.contractAddress
+        );
+
+        balance = balance / Math.pow(10, parseFloat(`${metadata.decimals}`));
+      }
+
+      props.dispatch({
+        type: GET_TOKEN_LIST,
+        walletTokenList: array,
+      });
+    } catch (error) {
+      props.dispatch({
+        type: ERROR,
+        error,
+      });
+    }
+  };
 
   const switchToNetwork = React.useCallback((network: any) => {
     try {
@@ -300,6 +410,7 @@ export const WalletAction = (props: any) => {
           network: network.network,
         },
         providerUrl: network.url,
+        tokens: network.tokens,
       });
     } catch (error: any) {
       props.dispatch({
@@ -323,5 +434,6 @@ export const WalletAction = (props: any) => {
     getMarketList,
     getTokenList,
     switchToNetwork,
+    getBalance,
   };
 };

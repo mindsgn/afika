@@ -43,6 +43,7 @@ export const network = [
     keys: ALCHEMY_SDK_MAINNET,
     url: 'https://api.securerpc.com/v1',
     network: Network.ETH_MAINNET,
+    tokens: [{}],
   },
   {
     name: 'Goerli',
@@ -50,6 +51,7 @@ export const network = [
     keys: ALCHEMY_SDK_GOERLI,
     url: 'https://rpc.ankr.com/eth_goerli',
     network: Network.ETH_GOERLI,
+    tokens: [{}],
   },
   {
     name: 'Mumbai',
@@ -57,6 +59,7 @@ export const network = [
     keys: ALCHEMY_SDK_MUMBAI,
     url: 'https://rpc.ankr.com/polygon_mumbai',
     network: Network.MATIC_MUMBAI,
+    tokens: [{}],
   },
   {
     name: 'Polygon',
@@ -64,5 +67,6 @@ export const network = [
     keys: ALCHEMY_SDK_POLYGON,
     url: 'https://rpc.ankr.com/polygon',
     network: Network.MATIC_MAINNET,
+    tokens: [{}],
   },
 ];
