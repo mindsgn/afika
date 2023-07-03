@@ -68,7 +68,7 @@ const Wallet = (props: any) => {
       >
         <TouchableOpacity
           onPress={() => {
-            updateSending(!send);
+            // updateSending(!send);
           }}
           style={{
             display: 'flex',

@@ -8313,7 +8313,7 @@ export const tokens = [
     id: 'chainlink',
     symbol: 'link',
     name: 'Chainlink',
-    possibleName: ['link', 'chainlink'],
+    possibleName: ['link', 'chainlink', 'ChainLink Token'],
     verified: true,
   },
   {
@@ -44649,7 +44649,7 @@ export const tokens = [
     id: 'usd-coin',
     symbol: 'usdc',
     name: 'USD Coin',
-    possibleName: ['usdc', 'USDC', 'usd'],
+    possibleName: ['usdc', 'USDC', 'usd', 'USD Coin (PoS)'],
     verified: true,
   },
   {

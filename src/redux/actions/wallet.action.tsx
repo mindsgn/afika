@@ -291,30 +291,18 @@ export const WalletAction = (props: any) => {
       const balance = ethers.utils.formatEther(nativeBalance);
 
       if (results) {
-        await getTokenData(results.name);
+        const data = await getTokenData(results.name);
+        const jsonData = await data?.json();
+
+        return {
+          ...jsonData,
+          balance,
+        };
       }
       return null;
     } catch (error) {
       return null;
     }
-  };
-
-  const isVerified = (keyword: string) => {
-    keyword = keyword.toLowerCase();
-
-    for (const token of tokens) {
-      const name = token.name.toLowerCase();
-      if (token.possibleName) {
-        const possibleNames = token.possibleName.map((n) => n.toLowerCase());
-        if (name.includes(keyword) || possibleNames.includes(keyword)) {
-          if (token.verified) {
-            return true;
-          }
-        }
-      }
-    }
-
-    return false;
   };
 
   const searchTokensByName = (keyword: string) => {
@@ -339,20 +327,11 @@ export const WalletAction = (props: any) => {
   const getTokenData = async (token: string) => {
     const results: null | any = await searchTokensByName(token);
     let data = null;
-
     if (results.length > 0) {
       const { id } = results[0];
       data = await fetch(`${COINGECKO_API_V3}/coins/${id}`, {
         method: 'GET',
-      })
-        .then((success) => {
-          success.json().then(async (results) => {
-            return results;
-          });
-        })
-        .catch((error) => {
-          return null;
-        });
+      });
     }
 
     return data;
@@ -376,7 +355,7 @@ export const WalletAction = (props: any) => {
       });
 
       const data = await getNativeBalance(settings, address);
-      console.log('data', data);
+      if (data) array.push(data);
 
       for await (const token of nonZeroBalances) {
         let balance: any = token.tokenBalance;
@@ -387,11 +366,35 @@ export const WalletAction = (props: any) => {
         );
 
         balance = balance / Math.pow(10, parseFloat(`${metadata.decimals}`));
+
+        if (metadata.name) {
+          const data = await getTokenData(metadata.name);
+
+          if (data) {
+            const jsonData = await data.json();
+
+            const newObject = {
+              ...jsonData,
+              balance,
+            };
+
+            array.push(newObject);
+          }
+        }
       }
+
+      let sum = 0;
+
+      array.map((token) => {
+        const { image, market_data, balance } = token;
+        const { ath } = market_data;
+        sum = sum + balance * ath[`${currency}`];
+      });
 
       props.dispatch({
         type: GET_TOKEN_LIST,
         walletTokenList: array,
+        totalBalance: sum,
       });
     } catch (error) {
       props.dispatch({

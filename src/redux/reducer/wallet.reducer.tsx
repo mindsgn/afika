@@ -82,6 +82,7 @@ export default (state = initialState, action: any) => {
       return {
         ...state,
         walletTokenList: action.walletTokenList,
+        totalBalance: action.totalBalance,
       };
     case GET_COINGECKO_LIST:
       return {

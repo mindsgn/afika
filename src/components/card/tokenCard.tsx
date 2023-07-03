@@ -11,9 +11,8 @@ export const TokenCard = ({
   name,
   symbol,
   amount,
+  fiatAmount,
   logo,
-  props,
-  currency,
   currencySymbol,
 }: {
   name: string;
@@ -21,17 +20,8 @@ export const TokenCard = ({
   amount: any;
   fiatAmount: string;
   logo: string;
-  props: any;
-  currency: string;
   currencySymbol: string;
 }) => {
-  const [fiat, setFiat] = React.useState<number>(0.0);
-  const { updateBalance } = WalletAction(props);
-
-  React.useEffect(() => {
-    // gsetTokenData(name);
-  }, [name]);
-
   return (
     <TouchableOpacity
       style={{
@@ -92,7 +82,7 @@ export const TokenCard = ({
             fontSize: 20,
           }}
         >
-          {currencySymbol} {fiat.toFixed(2)}
+          {currencySymbol} {fiatAmount}
         </Text>
         <Text
           style={{

@@ -103,16 +103,18 @@ const TokenContainer = (props: any) => {
         </View>
       ) : (
         walletTokenList.map((item: any, index: any) => {
+          const { image, market_data, balance } = item;
+          const { large } = image;
+          const { ath } = market_data;
+          const total = (balance * ath[`${currency}`]).toFixed(2);
           return (
             <TokenCard
               key={index}
-              logo={item.logo}
-              name={item.symbol}
+              logo={large}
+              name={item.name}
               symbol={item.symbol}
               amount={item.balance}
-              fiatAmount={item.fiatAmount}
-              props={props}
-              currency={currency}
+              fiatAmount={total}
               currencySymbol={currencySymbol}
             />
           );
