@@ -5,6 +5,7 @@ import {
   ReceiveCard,
   SendCard,
   SwitchNetworkCard,
+  TokenDataCard,
 } from './card';
 import { TokenContainer } from './container';
 
@@ -16,4 +17,5 @@ export {
   ReceiveCard,
   SendCard,
   SwitchNetworkCard,
+  TokenDataCard,
 };

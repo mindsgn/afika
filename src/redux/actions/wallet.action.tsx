@@ -12,10 +12,9 @@ import {
   INCREASE_BALANCE,
   DECREASE_BALANCE,
   SET_BALANCE,
-  //@ts-ignore
-} from '@orbyt/constants';
+} from '../../constants';
 import * as WebBrowser from '@toruslabs/react-native-web-browser';
-import { useWalletConnect } from '@walletconnect/react-native-dapp';
+import { Framework } from '@superfluid-finance/sdk-core';
 import Web3Auth, {
   LOGIN_PROVIDER,
   OPENLOGIN_NETWORK,
@@ -27,7 +26,8 @@ import { Buffer } from 'buffer';
 import { Contract, ethers } from 'ethers';
 import React from 'react';
 import { tokens } from '../../constants/tokens';
-import { AnyMxRecord } from 'dns';
+import { ToastAndroid } from 'react-native';
+import { AnimationAction } from './animation.action';
 
 global.Buffer = global.Buffer || Buffer;
 
@@ -35,6 +35,8 @@ const scheme = 'orbyt';
 const resolvedRedirectUrl = `${scheme}://openlogin`;
 
 export const WalletAction = (props: any) => {
+  const { updateSending } = AnimationAction(props);
+
   const connectWithWeb3Auth = async () => {
     try {
       const response = await new Web3Auth(WebBrowser, {
@@ -119,7 +121,7 @@ export const WalletAction = (props: any) => {
 
   //get market data
   const getMarketList = React.useCallback(async (location: string) => {
-    await fetch(`${COINGECKO_API}/list`, {
+    await fetch(`${COINGECKO_API_V3}/list`, {
       method: 'GET',
     }).then((success) => {
       success.json().then((data) => {
@@ -228,10 +230,8 @@ export const WalletAction = (props: any) => {
       const alchemy = new Alchemy(settings);
       // Get token balances
       const balances = await alchemy.core.getTokenBalances(address);
-
-      console.log(`The balances of ${address} address are:`, balances);
     } catch (error) {
-      console.log(error);
+      /// console.log(error);
     }
   };
 
@@ -337,6 +337,69 @@ export const WalletAction = (props: any) => {
     return data;
   };
 
+  const sendPayment = async (
+    stream: boolean,
+    native: boolean,
+    providerUrl: string,
+    privateKey: string,
+    recipientAddress: string,
+    amount: string,
+    contractAddress?: string,
+    abi?: string
+  ) => {
+    try {
+      const ethersProvider = ethers.getDefaultProvider(providerUrl);
+
+      const wallet = new ethers.Wallet(privateKey, ethersProvider);
+      const paymentAmount = ethers.utils.parseEther(amount);
+
+      if (native) {
+        const transaction = await wallet.sendTransaction({
+          to: recipientAddress,
+          value: paymentAmount,
+        });
+
+        console.log('Transaction hash:', transaction.hash);
+
+        const confirmedTransaction = await transaction.wait();
+
+        console.log(
+          'Transaction confirmed in block:',
+          confirmedTransaction.blockNumber
+        );
+      } else {
+        const usdcContract = new ethers.Contract(contractAddress, abi, wallet);
+        const paymentAmount = ethers.utils.parseUnits('100', 6);
+
+        const transaction = await usdcContract.transfer(
+          recipientAddress,
+          paymentAmount
+        );
+        await transaction.wait();
+
+        console.log('Transaction hash:', transaction.hash);
+
+        updateSending(false);
+
+        ToastAndroid.showWithGravityAndOffset(
+          'Payment Sent!',
+          ToastAndroid.LONG,
+          ToastAndroid.BOTTOM,
+          25,
+          50
+        );
+      }
+    } catch (error) {
+      ToastAndroid.showWithGravityAndOffset(
+        'Payment Failed!',
+        ToastAndroid.LONG,
+        ToastAndroid.BOTTOM,
+        25,
+        50
+      );
+    }
+  };
+
   const getTokenList = async (
     address: string,
     settings: any,
@@ -386,7 +449,7 @@ export const WalletAction = (props: any) => {
       let sum = 0;
 
       array.map((token) => {
-        const { image, market_data, balance } = token;
+        const { market_data, balance } = token;
         const { ath } = market_data;
         sum = sum + balance * ath[`${currency}`];
       });
@@ -438,5 +501,6 @@ export const WalletAction = (props: any) => {
     getTokenList,
     switchToNetwork,
     getBalance,
+    sendPayment,
   };
 };

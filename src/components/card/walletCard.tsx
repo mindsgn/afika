@@ -134,7 +134,6 @@ const mapStateToProps = (state: any) => {
     providerUrl: state.wallet.providerUrl,
     settings: state.wallet.settings,
     totalBalance: state.wallet.totalBalance,
-    tokens: state.wallet,
   };
 };
 

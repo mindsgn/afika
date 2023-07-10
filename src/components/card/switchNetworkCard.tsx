@@ -1,23 +1,13 @@
-//@ts-ignore
-import { network } from '@orbyt/constants';
-//@ts-ignore
-import { colors } from '@orbyt/constants';
-import { AnimationAction, WalletAction } from '@orbyt/redux';
 import React from 'react';
-import { View, TouchableOpacity, Text, Animated, Image } from 'react-native';
+import { View, TouchableOpacity, Text, Animated } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import { connect } from 'react-redux';
-import { start } from 'repl';
+
+import { network, colors } from '../../constants';
+import { AnimationAction, WalletAction } from '../../redux';
 
 const SwitchNetworkCard = (props: any) => {
-  const {
-    switchNetwork,
-    providerUrl,
-    settings,
-    address,
-    marketTokenList,
-    currency,
-  } = props;
+  const { switchNetwork, providerUrl, settings, address, currency } = props;
   const { updateSwitchNetwork } = AnimationAction(props);
   const { getTokenList, getChainId, switchToNetwork } = WalletAction(props);
   const cardOpacity = React.useRef(new Animated.Value(0)).current;
@@ -52,7 +42,6 @@ const SwitchNetworkCard = (props: any) => {
   }, [switchNetwork]);
 
   React.useEffect(() => {
-    console.log(address);
     getTokenList(address, settings, currency);
     getChainId(providerUrl);
   }, [providerUrl]);
@@ -109,7 +98,7 @@ const SwitchNetworkCard = (props: any) => {
           padding: 10,
         }}
       >
-        {network.map((item) => {
+        {network.map((item: any) => {
           return (
             <TouchableOpacity
               key={item.name}

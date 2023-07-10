@@ -1,8 +1,8 @@
 //@ts-ignore
-import { TokenCard } from '@orbyt/components';
+import { TokenCard } from '../../components';
 //@ts-ignore
-import { colors } from '@orbyt/constants';
-import { WalletAction } from '@orbyt/redux';
+import { colors } from '../../constants';
+import { WalletAction, AnimationAction } from '../../redux';
 import React from 'react';
 import { View, Text, Animated } from 'react-native';
 import { connect } from 'react-redux';
@@ -11,27 +11,23 @@ import { tokens } from './../../constants/tokens';
 const TokenContainer = (props: any) => {
   const opacity = React.useRef(new Animated.Value(0)).current;
   const [mounted, setMounted] = React.useState<any>(false);
-  const [loading, setLoading] = React.useState<boolean>(true);
-  const { walletTokenList, currency, currencySymbol, providerUrl, settings } =
-    props;
+  const { walletTokenList, currency, currencySymbol, loading = true } = props;
+  const { updateTokenData } = AnimationAction(props);
 
-  function slideUp() {
+  const slideUp = () => {
     Animated.timing(opacity, {
       toValue: 1,
       duration: 1500,
       useNativeDriver: true,
     }).start();
-  }
+  };
 
   React.useEffect(() => {
     if (mounted) {
       setTimeout(slideUp, 2000);
-      setLoading(false);
     }
     setMounted(true);
   }, [mounted]);
-
-  React.useEffect(() => {}, [providerUrl, settings]);
 
   return (
     <Animated.View
@@ -116,6 +112,9 @@ const TokenContainer = (props: any) => {
               amount={item.balance}
               fiatAmount={total}
               currencySymbol={currencySymbol}
+              onPress={() => {
+                updateTokenData(true);
+              }}
             />
           );
         })
@@ -132,6 +131,7 @@ const mapStateToProps = (state: any) => {
     providerUrl: state.wallet.providerUrl,
     currencySymbol: state.wallet.currencySymbol,
     currency: state.wallet.currency,
+    loading: state.wallet.loading,
   };
 };
 

@@ -1,30 +1,61 @@
 import React from 'react';
-import { TextInput as Input, View, Text } from 'react-native';
+import {
+  TextInput as Input,
+  View,
+  Text,
+  KeyboardTypeOptions,
+} from 'react-native';
 
-import { SignInButton as Button } from '../button';
-
-export const TextInput = ({ type }: { type: string }) => {
+export const TextInput = ({
+  placeholder,
+  flex = 1,
+  title,
+  type = 'default',
+  onChangeText,
+}: {
+  placeholder?: string;
+  flex?: number;
+  title: string;
+  type: KeyboardTypeOptions;
+  onChangeText?: (text: string) => void;
+}) => {
   return (
     <View
       style={{
         borderWidth: 4,
-        borderColor: 'white',
-        padding: 20,
-        width: '100%',
-        height: 20,
-        marginTop: 10,
-        marginBottom: 10,
-        borderRadius: 10,
+        flex: flex,
+        margin: 5,
       }}
     >
       <Text
         style={{
           color: 'white',
-          fontSize: 12,
+          fontSize: 16,
+          fontFamily: 'SF-Pro-Rounded-Heavy',
         }}
       >
-        Hello
+        {title}
       </Text>
+      <View
+        style={{
+          borderRadius: 10,
+          borderColor: 'white',
+          borderWidth: 1,
+          padding: 5,
+        }}
+      >
+        <Input
+          style={{
+            color: 'white',
+            fontSize: 16,
+            fontFamily: 'SF-Pro-Rounded-Heavy',
+          }}
+          multiline={false}
+          placeholder={placeholder}
+          onChangeText={onChangeText}
+          keyboardType={type}
+        />
+      </View>
     </View>
   );
 };

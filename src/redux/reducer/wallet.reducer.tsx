@@ -1,4 +1,6 @@
 import { ALCHEMY_SDK_MAINNET } from '@env';
+import { Network } from 'alchemy-sdk';
+
 import {
   CONNECT,
   DISCONNECT,
@@ -13,9 +15,7 @@ import {
   DECREASE_BALANCE,
   SET_BALANCE,
   //@ts-ignore
-} from '@orbyt/constants';
-import { Network } from 'alchemy-sdk';
-
+} from '../../constants';
 import { walletState } from '../../interface';
 
 const initialState: walletState = {
@@ -38,6 +38,7 @@ const initialState: walletState = {
   currency: 'zar',
   totalBalance: 0,
   currencySymbol: 'R',
+  loading: true,
   settings: {
     apiKey: ALCHEMY_SDK_MAINNET,
     network: Network.ETH_MAINNET,
@@ -71,7 +72,6 @@ export default (state = initialState, action: any) => {
         ...state,
         networkName: action.networkName,
         networkID: action.networkID,
-        totalBalance: 0,
       };
     case GET_ADDRESS:
       return {
@@ -83,6 +83,7 @@ export default (state = initialState, action: any) => {
         ...state,
         walletTokenList: action.walletTokenList,
         totalBalance: action.totalBalance,
+        loading: false,
       };
     case GET_COINGECKO_LIST:
       return {
@@ -94,21 +95,20 @@ export default (state = initialState, action: any) => {
         ...state,
         settings: action.settings,
         providerUrl: action.providerUrl,
+        loading: true,
+        totalBalance: 0,
       };
     case INCREASE_BALANCE:
       return {
         ...state,
-        totalBalance: state.totalBalance + action.amount,
       };
     case DECREASE_BALANCE:
       return {
         ...state,
-        totalBalance: state.totalBalance - action.amount,
       };
     case SET_BALANCE:
       return {
         ...state,
-        totalBalance: action.amount,
       };
     case ERROR:
       return {

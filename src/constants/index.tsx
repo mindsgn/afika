@@ -4,9 +4,10 @@ import {
   ALCHEMY_SDK_GOERLI,
   ALCHEMY_SDK_MAINNET,
 } from '@env';
-import { ETHLogo, MaticLogo } from '@orbyt/assets';
+
 import { Network } from 'alchemy-sdk';
 import React from 'react';
+import { ETHLogo, MaticLogo } from '../assets';
 
 export const GET_AUTH = 'GET_AUTH';
 export const CONNECT = 'CONNECT';
@@ -26,6 +27,7 @@ export const SWITCH_NETWORK = 'SWITCH_NETWORK';
 export const INCREASE_BALANCE = 'INCREASE_BALANCE';
 export const DECREASE_BALANCE = 'DECREASE_BALANCE';
 export const SET_BALANCE = 'SET_BALANCE';
+export const UPDATE_TOKEN_DATA = 'UPDATE_TOKEN_DATA';
 
 export const colors = {
   orange: '#F15A24',

@@ -38,6 +38,7 @@ export interface walletState {
   settings: any;
   totalBalance: number;
   tokens: any[];
+  loading: boolean;
 }
 
 export interface nft {

@@ -10,7 +10,7 @@
 //@ts-ignore
 import { store, persistor } from '@orbyt/redux';
 //@ts-ignore
-import { Load, Home, SignIn } from '@orbyt/screen';
+import { Load, Home, SignIn, Token } from '@orbyt/screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -24,7 +24,7 @@ StatusBar.setHidden(true);
 
 const Stack = createNativeStackNavigator();
 
-const App: React.FC = () => {
+const App = () => {
   return (
     <Provider store={store}>
       <PersistGate loading={null} persistor={persistor}>
@@ -37,6 +37,7 @@ const App: React.FC = () => {
             <Stack.Screen name="Load" component={Load} />
             <Stack.Screen name="SignIn" component={SignIn} />
             <Stack.Screen name="Home" component={Home} />
+            <Stack.Screen name="Token" component={Token} />
           </Stack.Navigator>
         </NavigationContainer>
       </PersistGate>

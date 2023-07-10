@@ -2,9 +2,9 @@ import {
   UPDATE_RECEIVE,
   UPDATE_SEND,
   UPDATE_SWITCH_NETWORK,
+  UPDATE_TOKEN_DATA,
   //@ts-ignore
 } from '@orbyt/constants';
-import React from 'react';
 
 export const AnimationAction = (props: any) => {
   const updateRecieving = (state: boolean) => {
@@ -35,6 +35,20 @@ export const AnimationAction = (props: any) => {
     }
   };
 
+  const updateTokenData = (state: boolean) => {
+    try {
+      props.dispatch({
+        type: UPDATE_TOKEN_DATA,
+        tokenData: state,
+      });
+    } catch (error) {
+      props.dispatch({
+        type: UPDATE_TOKEN_DATA,
+        tokenData: false,
+      });
+    }
+  };
+
   const updateSwitchNetwork = (state: boolean) => {
     try {
       props.dispatch({
@@ -53,5 +67,6 @@ export const AnimationAction = (props: any) => {
     updateRecieving,
     updateSending,
     updateSwitchNetwork,
+    updateTokenData,
   };
 };
