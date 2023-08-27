@@ -7,9 +7,6 @@ import { WalletAction } from '@orbyt/redux';
 import React from 'react';
 import { View, Animated, Text } from 'react-native';
 import { connect } from 'react-redux';
-
-// import { OnboardingButton as Button } from '../../components/onboarding/button';
-
 import { style } from './style';
 
 const SignIn = (props: any) => {
@@ -49,6 +46,18 @@ const SignIn = (props: any) => {
         >
           Sign in your wallet
         </Text>
+      </View>
+      <View>
+        <Text
+          style={[
+            {
+              color: `${colors.white}`,
+              fontSize: 32,
+              width: 300,
+              fontFamily: 'SF-Pro-Rounded-Regular',
+            },
+          ]}
+        ></Text>
       </View>
       <View
         style={{
