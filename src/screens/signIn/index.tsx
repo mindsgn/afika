@@ -1,35 +1,77 @@
-//@ts-ignore
-import { SignInButton } from '@orbyt/components';
-//@ts-ignore
-import { colors } from '@orbyt/constants';
-//@ts-ignore
-import { WalletAction } from '@orbyt/redux';
-import React from 'react';
-import { View, Animated, Text } from 'react-native';
-import { connect } from 'react-redux';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ActivityIndicator } from 'react-native';
+import PhoneInput from 'react-native-international-phone-number';
+import { phone } from 'phone';
+
+import { colors } from '../../constants';
 import { style } from './style';
+import { useAuth } from '../../context';
 
 const SignIn = (props: any) => {
-  const { connected, navigation, privKey, providerUrl } = props;
-  const { connectWithWeb3Auth, getChainId, getAccount } = WalletAction(props);
-  const progress = React.useRef(new Animated.Value(0)).current;
-  const scale = React.useRef(new Animated.Value(0)).current;
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [isValid, setIsValid] = useState(false);
+  const { navigation, route } = props;
+  const { auth, setAuth } = useAuth();
+  const { params } = route;
+  const { MagicKey } = params;
+  const [selectedCountry, setSelectedCountry] = useState({
+    callingCode: '+27',
+    cca2: 'ZA',
+    flag: '🇿🇦',
+    name: {
+      bg: 'Южна Африка',
+      by: 'Паўднёвая Афрыка',
+      cn: '南非',
+      cz: 'Jižní Afrika',
+      de: 'Südafrika',
+      ee: 'Lõuna-Aafrika',
+      el: 'Νότια Αφρική',
+      en: 'South Africa',
+      es: 'Sudáfrica',
+      fr: 'Afrique du Sud',
+      he: 'דרום אפריקה',
+      it: 'Sud Africa',
+      jp: '南アフリカ',
+      nl: 'Zuid-Afrika',
+      pl: 'Afryka Południowa',
+      pt: 'África do Sul',
+      ro: 'Africa de Sud',
+      ru: 'Южная Африка',
+      ua: 'Південна Африка',
+      zh: '南非',
+    },
+  });
 
-  React.useEffect(() => {
-    Animated.timing(progress, {
-      toValue: 1,
-      useNativeDriver: true,
-    }).start();
-    Animated.timing(scale, { toValue: 0.4, useNativeDriver: true }).start();
-  }, []);
+  function handleSelectedCountry(country: any) {
+    setSelectedCountry(country);
+  }
 
-  React.useEffect(() => {
-    if (connected) {
-      getChainId(providerUrl);
-      getAccount(privKey);
-      navigation.navigate('Home');
+  const connectWithMagic = async () => {
+    try {
+      const response = await MagicKey.auth.loginWithSMS({
+        phoneNumber: `${selectedCountry.callingCode} ${phoneNumber}`,
+      });
+      await setAuth(response);
+    } catch (error) {
+      setIsValid(false);
+      await setPhoneNumber('');
+      await setAuth(null);
     }
-  }, [connected]);
+  };
+
+  useEffect(() => {
+    if (auth) {
+      navigation.replace('HomeTabs');
+    }
+  }, [auth]);
+
+  useEffect(() => {
+    const result = phone(`${selectedCountry.callingCode} ${phoneNumber}`);
+    setIsValid(result.isValid);
+    if (isValid) {
+      connectWithMagic();
+    }
+  }, [phoneNumber, isValid]);
 
   return (
     <View style={style.default}>
@@ -37,58 +79,105 @@ const SignIn = (props: any) => {
         <Text
           style={[
             {
-              color: `${colors.white}`,
-              fontSize: 50,
-              width: 300,
               fontFamily: 'SF-Pro-Rounded-Heavy',
+              fontSize: 100,
+              color: 'white',
             },
           ]}
         >
-          Sign in your wallet
+          ORBYT
         </Text>
+        <View style={style.tagContainer}>
+          <Text
+            style={[
+              {
+                fontFamily: 'SF-Pro-Rounded-Regular',
+                fontSize: 16,
+                color: 'white',
+              },
+            ]}
+          >
+            Welcome, To get Started, Sign in using your phone number.
+          </Text>
+        </View>
       </View>
-      <View>
-        <Text
-          style={[
-            {
-              color: `${colors.white}`,
-              fontSize: 32,
-              width: 300,
-              fontFamily: 'SF-Pro-Rounded-Regular',
-            },
-          ]}
-        ></Text>
-      </View>
-      <View
-        style={{
-          width: '90%',
-          flex: 1,
-          padding: 10,
-          flexDirection: 'column',
-          display: 'flex',
-          justifyContent: 'flex-end',
-          alignItems: 'flex-end',
-        }}
-      >
-        <SignInButton
-          color="#F15A24"
-          onPress={() => connectWithWeb3Auth()}
-          text="SIGN IN WITH GOOGLE"
-        />
-      </View>
+
+      {isValid ? (
+        <ActivityIndicator size="large" />
+      ) : (
+        <View style={style.phoneNumberContainer}>
+          <PhoneInput
+            value={phoneNumber}
+            onChangePhoneNumber={(number) => {
+              setPhoneNumber(number);
+            }}
+            defaultCountry={'ZA'}
+            selectedCountry={selectedCountry}
+            onChangeSelectedCountry={handleSelectedCountry}
+            inputStyle={{
+              color: '#F3F3F3',
+            }}
+            containerStyle={{
+              backgroundColor: colors.black,
+              borderWidth: 0,
+              height: 70,
+            }}
+            flagContainerStyle={{
+              borderTopLeftRadius: 7,
+              borderBottomLeftRadius: 7,
+              backgroundColor: '#808080',
+              justifyContent: 'center',
+              height: 70,
+            }}
+            flagTextStyle={{
+              fontSize: 16,
+              fontWeight: 'bold',
+              color: '#F3F3F3',
+            }}
+            modalStyle={{
+              modal: {
+                backgroundColor: '#333333',
+                borderWidth: 1,
+              },
+              backdrop: {},
+              divider: {
+                backgroundColor: 'transparent',
+              },
+              countriesList: {},
+              searchInput: {
+                borderRadius: 8,
+                borderWidth: 1,
+                borderColor: '#F3F3F3',
+                color: '#F3F3F3',
+                backgroundColor: '#333333',
+                paddingHorizontal: 12,
+                height: 46,
+              },
+              countryButton: {
+                borderWidth: 1,
+                borderColor: '#F3F3F3',
+                backgroundColor: '#666666',
+                marginVertical: 4,
+                paddingVertical: 0,
+              },
+              noCountryText: {},
+              noCountryContainer: {},
+              flag: {
+                color: '#FFFFFF',
+                fontSize: 20,
+              },
+              callingCode: {
+                color: '#F3F3F3',
+              },
+              countryName: {
+                color: '#F3F3F3',
+              },
+            }}
+          />
+        </View>
+      )}
     </View>
   );
 };
 
-const mapStateToProps = (state: any, props: any) => {
-  return {
-    connected: state.wallet.connected,
-    privKey: state.wallet.privKey,
-    address: state.wallet.address,
-    providerUrl: state.wallet.providerUrl,
-    settings: state.wallet.settings,
-    marketTokenList: state.wallet.marketTokenList,
-  };
-};
-
-export default connect(mapStateToProps)(SignIn);
+export { SignIn };

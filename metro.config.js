@@ -23,7 +23,16 @@ module.exports = (async () => {
     assets: ['./src/assets/fonts/'],
     resolver: {
       assetExts: assetExts.filter((ext) => ext !== 'svg'),
-      sourceExts: [...sourceExts, 'svg'],
+      sourceExts: [
+        ...sourceExts,
+        'svg',
+        'jsx',
+        'js',
+        'ts',
+        'tsx',
+        'cjs',
+        'json',
+      ],
     },
   };
 })();

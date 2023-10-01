@@ -1,21 +1,19 @@
-import { SignInButton } from './button';
-import {
-  WalletCard,
-  TokenCard,
-  ReceiveCard,
-  SendCard,
-  SwitchNetworkCard,
-  TokenDataCard,
-} from './card';
-import { TokenContainer } from './container';
+import { Button } from './Button';
+import { Heading } from './Heading';
+import { Input } from './TextInput';
+import { HomeTabs } from './bottomNavigation';
+import { TransactionCard } from './transactionCard';
+import { TransactionContainer } from './transactionContainer';
+import { WalletButtons } from './walletButtons';
+import { WalletCard } from './walletCard';
 
 export {
   WalletCard,
-  SignInButton,
-  TokenCard,
-  TokenContainer,
-  ReceiveCard,
-  SendCard,
-  SwitchNetworkCard,
-  TokenDataCard,
+  Heading,
+  Input,
+  WalletButtons,
+  TransactionContainer,
+  TransactionCard,
+  Button,
+  HomeTabs,
 };

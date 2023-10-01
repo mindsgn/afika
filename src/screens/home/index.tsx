@@ -1,11 +1,38 @@
-//@ts-ignore
-import { Wallet } from '@orbyt/screen';
-// import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import React from 'react';
-// import Icon from 'react-native-vector-icons/Ionicons';
+import React, { useEffect } from 'react';
+import { View } from 'react-native';
 
-// const Tab = createBottomTabNavigator();
+import { style } from './style';
+import {
+  WalletCard,
+  WalletButtons,
+  TransactionContainer,
+} from '../../components';
+import { useWallet } from '../../context';
 
-export const Home = () => {
-  return <Wallet />;
+const Home = (props: any) => {
+  const { route, navigation } = props;
+  const { params } = route;
+  const { MagicKey } = params;
+  const { setMagic } = useWallet();
+
+  useEffect(() => {
+    setMagic(MagicKey);
+  });
+
+  return (
+    <View style={style.default}>
+      <WalletCard />
+      <WalletButtons
+        goToRecieve={() => {
+          navigation.navigate('Recieve');
+        }}
+        goToSend={() => {
+          navigation.navigate('Error');
+        }}
+      />
+      <TransactionContainer />
+    </View>
+  );
 };
+
+export { Home };
