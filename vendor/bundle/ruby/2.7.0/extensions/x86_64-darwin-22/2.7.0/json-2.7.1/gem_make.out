@@ -1,0 +1,13 @@
+current directory: /Users/mindsgn/projects/AwesomeProject/vendor/bundle/ruby/2.7.0/gems/json-2.7.1/ext/json
+/Users/mindsgn/.rbenv/versions/2.7.5/bin/ruby -I /Users/mindsgn/.rbenv/versions/2.7.5/lib/ruby/2.7.0 -r ./siteconf20240111-7568-nm90lp.rb extconf.rb
+creating Makefile
+
+current directory: /Users/mindsgn/projects/AwesomeProject/vendor/bundle/ruby/2.7.0/gems/json-2.7.1/ext/json
+make "DESTDIR=" clean
+
+current directory: /Users/mindsgn/projects/AwesomeProject/vendor/bundle/ruby/2.7.0/gems/json-2.7.1/ext/json
+make "DESTDIR="
+make: Nothing to be done for `all'.
+
+current directory: /Users/mindsgn/projects/AwesomeProject/vendor/bundle/ruby/2.7.0/gems/json-2.7.1/ext/json
+make "DESTDIR=" install
