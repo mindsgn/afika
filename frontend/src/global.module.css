@@ -1,0 +1,37 @@
+@font-face {
+  font-family: 'bold';
+  src: url('/fonts/SF-Pro-Rounded-Bold.otf');
+}
+
+@font-face {
+  font-family: 'heavy';
+  src: url('/fonts/SF-Pro-Rounded-Heavy.otf');
+}
+
+@font-face {
+  font-family: 'medium';
+  src: url('/fonts/SF-Pro-Rounded-Medium.otf');
+}
+
+@font-face {
+  font-family: 'regular';
+  src: url('/fonts/SF-Pro-Rounded-Regular.otf');
+}
+
+@font-face {
+  font-family: 'semi';
+  src: url('/fonts/SF-Pro-Rounded-Semibold.otf');
+}
+
+.html,
+.body {
+  font-family: 'heavy';
+  font-size: large;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  background: black;
+}

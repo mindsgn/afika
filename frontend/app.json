@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "bad6de05-d56e-47c7-9b4e-5ccd42db2b37"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "mindsgn.studio.meme"
+    }
+  }
+}
