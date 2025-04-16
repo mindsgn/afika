@@ -1,1 +1,4 @@
 app/node_modules
+app/.env
+backend/functions/.env
+app/.expo
