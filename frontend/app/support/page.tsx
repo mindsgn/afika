@@ -30,9 +30,9 @@ export default function Support() {
               Need Help?
             </Heading>
             <Text>
-              POCKET MONEY is an open-source Polygon wallet tracker. While we
-              aim to keep the experience smooth and intuitive, here's some help
-              in case you hit a snag.
+              {
+                "POCKET MONEY is an open-source Polygon wallet tracker. While we aim to keep the experience smooth and intuitive, here's some helpin case you hit a snag."
+              }
             </Text>
           </Box>
 
@@ -56,9 +56,9 @@ export default function Support() {
               2. Is this safe to use?
             </Heading>
             <Text mb={4}>
-              Yes. POCKET MONEY is a read-only tool. We never ask for private
-              keys, seed phrases, or connect to your wallet. It's 100% safe to
-              browse public wallet data.
+              {
+                "Yes. POCKET MONEY is a read-only tool. We never ask for private keys, seed phrases, or connect to your wallet. It's 100% safe to browse public wallet data."
+              }
             </Text>
 
             <Heading as="h3" size="md" mb={2}>

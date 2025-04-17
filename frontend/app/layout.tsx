@@ -18,7 +18,7 @@ export const metadata: Metadata = {
       url: 'https://mindsgn.studio'
     }
   ],
-  description: 'POCKET MONEY a simple wallet',
+  description: 'POCKET MONEY is an open-source Polygon wallet tracker. While we aim to keep the experience smooth and intuitive,',
   keywords,
   twitter: {
     site: 'https://pocket.mindsgn.studio',

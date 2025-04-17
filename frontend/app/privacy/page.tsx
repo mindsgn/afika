@@ -104,10 +104,14 @@ export default function PrivacyPolicy() {
                 You retain full control over your wallet and data.
               </ListItem>
               <ListItem>
-                Since we don&apos;t collect personal data, there&apos;s nothing to delete or export.
+                {
+                  "Since we don't collect personal data, there&apos;s nothing to delete or export"
+                }
               </ListItem>
               <ListItem>
-                You can audit the code or deploy your own instance (this is open-source!)
+                {
+                  'You can audit the code or deploy your own instance (this is open-source!)'
+                }
               </ListItem>
             </UnorderedList>
           </Box>
