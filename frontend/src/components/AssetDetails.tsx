@@ -14,7 +14,7 @@ import {
 import { Button } from './button';
 import QRCode from 'react-qr-code';
 import { useAssets } from 'store/assets';
-import {APIProvider, Map} from '@vis.gl/react-google-maps';
+import { APIProvider, Map } from '@vis.gl/react-google-maps';
 
 export type AssetDetailsProps = {
   isOpen?: boolean;
@@ -115,13 +115,13 @@ function AssetDetails({
               <AccordionPanel pb={4}>
                 <APIProvider apiKey={`${process.env.NEXT_PUBLIC_GOOGLE_MAPS}`}>
                   <Map
-                  style={{ width: '100%', height: '200px' }}
-                  defaultCenter={{lat: 22.54992, lng: 0}}
-                  defaultZoom={3}
-                  gestureHandling={'greedy'}
-                  disableDefaultUI={true}
-                />
-              </APIProvider>
+                    style={{ width: '100%', height: '200px' }}
+                    defaultCenter={{ lat: 22.54992, lng: 0 }}
+                    defaultZoom={3}
+                    gestureHandling={'greedy'}
+                    disableDefaultUI={true}
+                  />
+                </APIProvider>
               </AccordionPanel>
             </AccordionItem>
 

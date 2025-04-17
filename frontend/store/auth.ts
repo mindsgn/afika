@@ -101,7 +101,6 @@ const useAuth = create(set => ({
         auth: true,
         token
       }));
-
     } catch (error) {
       console.log(error);
     }

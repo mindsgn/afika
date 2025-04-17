@@ -28,7 +28,6 @@ function MainContainer({}: MainContainerProp) {
   //@ts-expect-error
   const { logout, auth } = authState;
 
-
   useEffect(() => {
     if (!auth) {
       router.push('/login');

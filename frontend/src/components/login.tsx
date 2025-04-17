@@ -38,7 +38,9 @@ const Login: React.FC = () => {
         <Box as="form" onSubmit={handleSubmit}>
           <VStack spacing={4}>
             <FormControl isRequired>
-              <FormLabel htmlFor="email" fontFamily={'bold'}>Email</FormLabel>
+              <FormLabel htmlFor="email" fontFamily={'bold'}>
+                Email
+              </FormLabel>
               <Input
                 id="email"
                 type="email"

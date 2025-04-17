@@ -139,7 +139,7 @@ export default function AssetModal({
       navigator.geolocation.getCurrentPosition(
         position => {
           console.log(position);
-          setPermission(true)
+          setPermission(true);
           setFormData(prevData => ({
             ...prevData,
             latitude: position.coords.latitude,
@@ -153,12 +153,12 @@ export default function AssetModal({
             longitude: 0
           }));
           // eslint-disable-next-line no-console
-          console.error("Error getting location:", error);
+          console.error('Error getting location:', error);
         }
       );
     } else {
       // eslint-disable-next-line no-console
-      console.error("Geolocation is not supported by this browser.");
+      console.error('Geolocation is not supported by this browser.');
     }
   };
 
@@ -176,17 +176,22 @@ export default function AssetModal({
           <ModalHeader>Add New Asset</ModalHeader>
           <ModalCloseButton />
           <ModalBody>
-            {permission ? null :
-              <Box 
+            {permission ? null : (
+              <Box
                 background={'blue.100'}
                 padding={4}
                 onClick={() => getLocation()}
                 cursor={'pointer'}
               >
-                <Heading size={"sm"} color='blue.500' fontFamily={'bold'}>Location not enabled</Heading>
-                <Text color='blue.700' fontFamily={'bold'}>To be able to track the location of the asset please enable location</Text>
+                <Heading size={'sm'} color="blue.500" fontFamily={'bold'}>
+                  Location not enabled
+                </Heading>
+                <Text color="blue.700" fontFamily={'bold'}>
+                  To be able to track the location of the asset please enable
+                  location
+                </Text>
               </Box>
-            }
+            )}
 
             <VStack spacing={4}>
               <FormControl>

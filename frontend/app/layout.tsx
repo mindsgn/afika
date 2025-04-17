@@ -3,7 +3,7 @@ import { Providers } from './providers';
 import '../src/global.module.css';
 import type { Metadata } from 'next';
 import { keywords } from '@/constants/keywords';
-import {APIProvider} from '@vis.gl/react-google-maps';
+import { APIProvider } from '@vis.gl/react-google-maps';
 
 export const metadata: Metadata = {
   title: 'POCKET MONEY',
@@ -18,8 +18,7 @@ export const metadata: Metadata = {
       url: 'https://mindsgn.studio'
     }
   ],
-  description:
-    'POCKET MONEY a simple wallet',
+  description: 'POCKET MONEY a simple wallet',
   keywords,
   twitter: {
     site: 'https://pocket.mindsgn.studio',
