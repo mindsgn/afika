@@ -2,3 +2,10 @@ app/node_modules
 app/.env
 backend/functions/.env
 app/.expo
+go-lib
+_app_
+_specs
+go
+ios
+android
+docs
