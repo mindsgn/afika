@@ -13,10 +13,6 @@ import (
 	"strings"
 	"sync"
 
-<<<<<<< HEAD
-func (w *NativeWallet) HelloWorld() string {
-	return "Hello World from GO"
-=======
 	"github.com/mindsgn-studio/pocket-money-app/core/internal/database"
 	"github.com/mindsgn-studio/pocket-money-app/core/internal/ethereum"
 )
@@ -451,5 +447,4 @@ func (w *WalletCore) getDB() (*database.DB, error) {
 	}
 
 	return w.db, nil
->>>>>>> f4b1669ed29d1c4f27f78bab8832155d4d79f3de
 }

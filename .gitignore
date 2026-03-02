@@ -3,8 +3,6 @@ dist/
 web-build/
 expo-env.d.ts
 docs
-<<<<<<< HEAD
-=======
 node_modules
 .kotlin
 *.orig.*
@@ -24,4 +22,3 @@ yarn-error.*
 package-lock.json
 frontend
 build
->>>>>>> f4b1669ed29d1c4f27f78bab8832155d4d79f3de
