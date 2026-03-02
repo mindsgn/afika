@@ -22,3 +22,5 @@ yarn-error.*
 package-lock.json
 frontend
 build
+app/android
+app/ios
