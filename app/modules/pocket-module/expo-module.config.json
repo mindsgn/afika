@@ -1,9 +1,0 @@
-{
-  "platforms": ["apple", "android"],
-  "apple": {
-    "modules": ["PocketModule"]
-  },
-  "android": {
-    "modules": ["pocket.module.mindsgn.PocketModule"]
-  }
-}

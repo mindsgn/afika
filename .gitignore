@@ -22,4 +22,4 @@ yarn-error.*
 package-lock.json
 frontend
 build
-app
+_app/*

@@ -1,8 +1,0 @@
-framework module "PocketCore" {
-	header "ref.h"
-    header "Core.objc.h"
-    header "Universe.objc.h"
-    header "PocketCore.h"
-
-    export *
-}
