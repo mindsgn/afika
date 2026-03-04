@@ -45,6 +45,14 @@ type WalletSecret struct {
 	PrivateKey []byte
 }
 
+type BalanceHistory struct {
+	UUID      string
+	ZAR       string
+	USD       string
+	EURO      string
+	CreatedAt int64
+}
+
 type TransactionRecord struct {
 	UUID            string
 	TxHash          string

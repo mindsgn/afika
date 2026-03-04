@@ -74,6 +74,7 @@ type backupPayload struct {
 	Version int            `json:"version"`
 	Wallets []walletBackup `json:"wallets"`
 }
+
 type WalletCore struct {
 	mu sync.RWMutex
 	db *database.DB
