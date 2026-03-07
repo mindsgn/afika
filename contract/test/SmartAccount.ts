@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { network } from "hardhat";
-import { parseEther, getAddress, encodeFunctionData } from "viem";
+import { parseEther, getAddress, encodeFunctionData, keccak256, toHex } from "viem";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -449,6 +449,92 @@ describe("SmartAccount System", async function () {
         ]),
         /UNAUTHORIZED|revert/,
       );
+    });
+  });
+
+  // =========================================================================
+  // validateUserOp
+  // =========================================================================
+
+  describe("validateUserOp", async function () {
+    function makeBaseUserOp(sender: string, nonce = 0n) {
+      return {
+        sender: sender as `0x${string}`,
+        nonce,
+        initCode: "0x" as `0x${string}`,
+        callData: "0x" as `0x${string}`,
+        accountGasLimits: ("0x" + "0".repeat(64)) as `0x${string}`,
+        preVerificationGas: 0n,
+        gasFees: ("0x" + "0".repeat(64)) as `0x${string}`,
+        paymasterAndData: "0x" as `0x${string}`,
+        signature: "0x" as `0x${string}`,
+      };
+    }
+
+    it("increments nonce sequence on valid signature", async function () {
+      const { account, accountAsEP, accountAddress } = await deployWithEntryPointAccount();
+      const userOpHash = keccak256(toHex("valid-userop"));
+      const sig = await owner.signMessage({ message: { raw: userOpHash } });
+
+      const userOp = {
+        ...makeBaseUserOp(accountAddress, 0n),
+        signature: sig,
+      };
+
+      await accountAsEP.write.validateUserOp([userOp, userOpHash, 0n]);
+      assert.equal(await account.read.getNonce([0n]), 1n);
+    });
+
+    it("does not increment nonce on invalid signature", async function () {
+      const { account, accountAsEP, accountAddress } = await deployWithEntryPointAccount();
+      const userOpHash = keccak256(toHex("invalid-sig"));
+      const wrongSig = await stranger.signMessage({ message: { raw: userOpHash } });
+
+      const userOp = {
+        ...makeBaseUserOp(accountAddress, 0n),
+        signature: wrongSig,
+      };
+
+      await accountAsEP.write.validateUserOp([userOp, userOpHash, 0n]);
+      assert.equal(await account.read.getNonce([0n]), 0n);
+    });
+
+    it("rejects invalid sender", async function () {
+      const { accountAsEP } = await deployWithEntryPointAccount();
+      const userOpHash = keccak256(toHex("invalid-sender"));
+      const sig = await owner.signMessage({ message: { raw: userOpHash } });
+
+      const userOp = {
+        ...makeBaseUserOp(stranger.account.address, 0n),
+        signature: sig,
+      };
+
+      await assert.rejects(
+        accountAsEP.write.validateUserOp([userOp, userOpHash, 0n]),
+        /INVALID_SENDER/,
+      );
+    });
+
+    it("detects nonce replay and keeps sequence unchanged", async function () {
+      const { account, accountAsEP, accountAddress } = await deployWithEntryPointAccount();
+
+      const firstHash = keccak256(toHex("first-op"));
+      const firstSig = await owner.signMessage({ message: { raw: firstHash } });
+      const first = {
+        ...makeBaseUserOp(accountAddress, 0n),
+        signature: firstSig,
+      };
+      await accountAsEP.write.validateUserOp([first, firstHash, 0n]);
+      assert.equal(await account.read.getNonce([0n]), 1n);
+
+      const replayHash = keccak256(toHex("replay-op"));
+      const replaySig = await owner.signMessage({ message: { raw: replayHash } });
+      const replay = {
+        ...makeBaseUserOp(accountAddress, 0n),
+        signature: replaySig,
+      };
+      await accountAsEP.write.validateUserOp([replay, replayHash, 0n]);
+      assert.equal(await account.read.getNonce([0n]), 1n);
     });
   });
 

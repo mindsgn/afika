@@ -551,6 +551,40 @@ func (d *DB) UpdateTransactionSettlement(ctx context.Context, txHash string, sta
 	return err
 }
 
+func (d *DB) UpdateUserOperationSettlement(ctx context.Context, userOpHash string, finalTxHash string, state string, bundlerStatus string) error {
+	if d == nil || d.db == nil {
+		return errors.New("database is not initialized")
+	}
+	if strings.TrimSpace(userOpHash) == "" {
+		return errors.New("user operation hash is required")
+	}
+
+	now := time.Now().Unix()
+	resolvedHash := strings.TrimSpace(finalTxHash)
+	if resolvedHash == "" {
+		resolvedHash = userOpHash
+	}
+
+	const txQuery = `
+	UPDATE transactions
+	SET tx_hash = ?, state = ?, bundler_status = ?, updated_at = ?
+	WHERE user_op_hash = ? OR tx_hash = ?;
+	`
+
+	if _, err := d.db.ExecContext(ctx, txQuery, resolvedHash, state, bundlerStatus, now, userOpHash, userOpHash); err != nil {
+		return err
+	}
+
+	const sponsoredQuery = `
+	UPDATE sponsored_operations
+	SET status = ?, bundler_tx_hash = ?, updated_at = ?
+	WHERE user_operation_hash = ?;
+	`
+
+	_, err := d.db.ExecContext(ctx, sponsoredQuery, state, resolvedHash, now, userOpHash)
+	return err
+}
+
 func (d *DB) RecordSponsoredOperation(ctx context.Context, item SponsoredOperation) error {
 	if d == nil || d.db == nil {
 		return errors.New("database is not initialized")

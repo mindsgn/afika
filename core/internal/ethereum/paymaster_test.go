@@ -2,7 +2,11 @@ package ethereum
 
 import (
 	"math/big"
+	"strings"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 func TestResolveSendMode(t *testing.T) {
@@ -57,5 +61,97 @@ func TestValidateSponsoredTransfer(t *testing.T) {
 
 	if err := ValidateSponsoredTransfer(policy, usdc, big.NewInt(200_000_000)); err == nil {
 		t.Fatalf("expected per-operation cap error")
+	}
+}
+
+func TestLoadPaymasterPolicyDailyOperationLimit(t *testing.T) {
+	t.Setenv("POCKET_PAYMASTER_DAILY_OP_LIMIT", "77")
+	policy := LoadPaymasterPolicy("ethereum-sepolia")
+	if policy.DailyOperationLimit != 77 {
+		t.Fatalf("expected daily operation limit 77, got %d", policy.DailyOperationLimit)
+	}
+}
+
+func TestLoadPaymasterPolicyDailyOperationLimitNetworkOverride(t *testing.T) {
+	t.Setenv("POCKET_PAYMASTER_DAILY_OP_LIMIT", "77")
+	t.Setenv("POCKET_PAYMASTER_DAILY_OP_LIMIT_ETHEREUM_SEPOLIA", "33")
+
+	policy := LoadPaymasterPolicy("ethereum-sepolia")
+	if policy.DailyOperationLimit != 33 {
+		t.Fatalf("expected network override 33, got %d", policy.DailyOperationLimit)
+	}
+}
+
+func TestBuildSignedPaymasterAndDataRequiresSignerKey(t *testing.T) {
+	t.Setenv("POCKET_PAYMASTER_SIGNER_PRIVATE_KEY", "")
+	_, err := BuildSignedPaymasterAndData("0x00000000000000000000000000000000000000A1", common.HexToAddress("0x00000000000000000000000000000000000000B2"), big.NewInt(0), big.NewInt(11155111), "ethereum-sepolia")
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "private key") {
+		t.Fatalf("expected missing signer key error, got %v", err)
+	}
+}
+
+func TestBuildSignedPaymasterAndDataBuildsExpectedLength(t *testing.T) {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+
+	t.Setenv("POCKET_PAYMASTER_SIGNER_PRIVATE_KEY", strings.TrimPrefix(common.Bytes2Hex(crypto.FromECDSA(key)), "0x"))
+
+	result, err := BuildSignedPaymasterAndData(
+		"0x00000000000000000000000000000000000000A1",
+		common.HexToAddress("0x00000000000000000000000000000000000000B2"),
+		big.NewInt(7),
+		big.NewInt(11155111),
+		"ethereum-sepolia",
+	)
+	if err != nil {
+		t.Fatalf("BuildSignedPaymasterAndData() error = %v", err)
+	}
+
+	if len(result) != 85 {
+		t.Fatalf("expected paymasterAndData length 85, got %d", len(result))
+	}
+	if string(result[:20]) != string(common.HexToAddress("0x00000000000000000000000000000000000000A1").Bytes()) {
+		t.Fatalf("unexpected paymaster address prefix")
+	}
+}
+
+func TestGetPaymasterSignerPrivateKeyNetworkOverride(t *testing.T) {
+	t.Setenv("POCKET_PAYMASTER_SIGNER_PRIVATE_KEY", "global")
+	t.Setenv("POCKET_PAYMASTER_SIGNER_PRIVATE_KEY_ETHEREUM_SEPOLIA", "network")
+
+	value := getPaymasterSignerPrivateKey("ethereum-sepolia")
+	if value != "network" {
+		t.Fatalf("expected network override, got %s", value)
+	}
+
+	value = getPaymasterSignerPrivateKey("ethereum-mainnet")
+	if value != "global" {
+		t.Fatalf("expected global fallback, got %s", value)
+	}
+}
+
+func TestBuildSignedPaymasterAndDataUsesNetworkSpecificKey(t *testing.T) {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+
+	t.Setenv("POCKET_PAYMASTER_SIGNER_PRIVATE_KEY", "")
+	t.Setenv("POCKET_PAYMASTER_SIGNER_PRIVATE_KEY_ETHEREUM_SEPOLIA", common.Bytes2Hex(crypto.FromECDSA(key)))
+
+	result, err := BuildSignedPaymasterAndData(
+		"0x00000000000000000000000000000000000000A1",
+		common.HexToAddress("0x00000000000000000000000000000000000000B2"),
+		big.NewInt(1),
+		big.NewInt(11155111),
+		"ethereum-sepolia",
+	)
+	if err != nil {
+		t.Fatalf("BuildSignedPaymasterAndData() error = %v", err)
+	}
+	if len(result) != 85 {
+		t.Fatalf("expected 85 bytes, got %d", len(result))
 	}
 }

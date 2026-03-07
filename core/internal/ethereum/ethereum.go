@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/mindsgn-studio/pocket-money-app/core/internal/config"
 	"github.com/mindsgn-studio/pocket-money-app/core/internal/database"
+	"github.com/mindsgn-studio/pocket-money-app/core/internal/logs"
 )
 
 type Wallet struct {
@@ -118,6 +119,22 @@ type SendResult struct {
 	Token         string `json:"token"`
 }
 
+type SmartAccountCreationReadiness struct {
+	Network                   string   `json:"network"`
+	OwnerAddress              string   `json:"ownerAddress"`
+	FactoryAddress            string   `json:"factoryAddress"`
+	EntryPointAddress         string   `json:"entryPointAddress"`
+	SmartAccountAddress       string   `json:"smartAccountAddress"`
+	SmartAccountExists        bool     `json:"smartAccountExists"`
+	OwnerBalanceWei           string   `json:"ownerBalanceWei"`
+	OwnerRequiredMinGasWei    string   `json:"ownerRequiredMinGasWei"`
+	HasSufficientOwnerBalance bool     `json:"hasSufficientOwnerBalance"`
+	CanUseSponsoredCreate     bool     `json:"canUseSponsoredCreate"`
+	IsReady                   bool     `json:"isReady"`
+	FailureReasons            []string `json:"failureReasons"`
+	Warnings                  []string `json:"warnings"`
+}
+
 var NetworkMainnetList []string = []string{
 	"ethereum-mainnet",
 }
@@ -136,6 +153,22 @@ var dialClient = func(url string) (balanceClient, error) {
 }
 
 var fetchMarketData = GetData
+
+var dialEthereumClient = func(ctx context.Context, url string) (*ethclient.Client, error) {
+	return ethclient.DialContext(ctx, url)
+}
+
+var clientChainID = func(ctx context.Context, client *ethclient.Client) (*big.Int, error) {
+	return client.ChainID(ctx)
+}
+
+var clientCodeAt = func(ctx context.Context, client *ethclient.Client, address common.Address) ([]byte, error) {
+	return client.CodeAt(ctx, address, nil)
+}
+
+var clientBalanceAt = func(ctx context.Context, client *ethclient.Client, address common.Address) (*big.Int, error) {
+	return client.BalanceAt(ctx, address, nil)
+}
 
 const (
 	NativeTokenIdentifier = "native"
@@ -329,10 +362,25 @@ func CreateOrGetSmartAccount(ctx context.Context, db *database.DB, network strin
 	if !common.IsHexAddress(owner.Address) {
 		return "", "", errors.New("invalid owner address")
 	}
+	ownerAddress := common.HexToAddress(owner.Address)
 
 	existing, err := db.FindSmartAccountByOwnerNetwork(ctx, owner.Address, network)
 	if err == nil && common.IsHexAddress(existing.Address) {
 		return owner.Address, existing.Address, nil
+	}
+	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "no rows") {
+		return "", "", err
+	}
+
+	readiness, err := CheckSmartAccountCreationReadiness(ctx, db, network)
+	if err != nil {
+		return "", "", err
+	}
+	if readiness.SmartAccountExists && common.IsHexAddress(readiness.SmartAccountAddress) {
+		if upsertErr := db.UpsertSmartAccount(ctx, owner.Address, network, readiness.SmartAccountAddress); upsertErr != nil {
+			return "", "", upsertErr
+		}
+		return owner.Address, readiness.SmartAccountAddress, nil
 	}
 
 	deployment, err := config.GetDeployment(network)
@@ -348,7 +396,7 @@ func CreateOrGetSmartAccount(ctx context.Context, db *database.DB, network strin
 		return "", "", fmt.Errorf("unsupported network: %s", network)
 	}
 
-	client, err := ethclient.DialContext(ctx, networkConfig.RPC[0])
+	client, err := dialEthereumClient(ctx, networkConfig.RPC[0])
 	if err != nil {
 		return "", "", err
 	}
@@ -359,13 +407,37 @@ func CreateOrGetSmartAccount(ctx context.Context, db *database.DB, network strin
 		return "", "", err
 	}
 
-	ownerAddress := common.HexToAddress(owner.Address)
-	predicted, err := factory.GetAddress(&bind.CallOpts{Context: ctx}, ownerAddress)
+	predicted := common.HexToAddress(readiness.SmartAccountAddress)
+	if predicted == (common.Address{}) {
+		predicted, err = factory.GetAddress(&bind.CallOpts{Context: ctx}, ownerAddress)
+		if err != nil {
+			return "", "", err
+		}
+	}
+
+	if !readiness.CanUseSponsoredCreate && !readiness.HasSufficientOwnerBalance {
+		return "", "", fmt.Errorf("wallet creation blocked: insufficient owner gas and sponsorship unavailable; fund owner wallet with at least %s wei", readiness.OwnerRequiredMinGasWei)
+	}
+
+	privateKey, err := crypto.ToECDSA(owner.PrivateKey)
 	if err != nil {
 		return "", "", err
 	}
 
-	code, err := client.CodeAt(ctx, predicted, nil)
+	if readiness.CanUseSponsoredCreate {
+		if userOpHash, createErr := createSmartAccountViaUserOperation(ctx, db, client, network, networkConfig, deployment, owner, ownerAddress, predicted, privateKey); createErr == nil {
+			if upsertErr := db.UpsertSmartAccount(ctx, owner.Address, network, predicted.Hex()); upsertErr != nil {
+				return "", "", upsertErr
+			}
+			return owner.Address, predicted.Hex(), nil
+		} else if !readiness.HasSufficientOwnerBalance {
+			return "", "", fmt.Errorf("wallet creation blocked: sponsored deployment failed and owner wallet has insufficient gas (%s wei required): %w", readiness.OwnerRequiredMinGasWei, createErr)
+		} else {
+			_ = userOpHash
+		}
+	}
+
+	code, err := clientCodeAt(ctx, client, predicted)
 	if err != nil {
 		return "", "", err
 	}
@@ -376,11 +448,6 @@ func CreateOrGetSmartAccount(ctx context.Context, db *database.DB, network strin
 		return owner.Address, predicted.Hex(), nil
 	}
 
-	privateKey, err := crypto.ToECDSA(owner.PrivateKey)
-	if err != nil {
-		return "", "", err
-	}
-
 	chainID := big.NewInt(int64(networkConfig.ChainID))
 	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainID)
 	if err != nil {
@@ -388,7 +455,11 @@ func CreateOrGetSmartAccount(ctx context.Context, db *database.DB, network strin
 	}
 	auth.Context = ctx
 
-	if _, err := factory.CreateAccount(auth, ownerAddress); err != nil {
+	if readiness.EntryPointAddress != "" {
+		if _, err := factory.CreateAccountWithEntryPoint(auth, ownerAddress, common.HexToAddress(readiness.EntryPointAddress)); err != nil {
+			return "", "", err
+		}
+	} else if _, err := factory.CreateAccount(auth, ownerAddress); err != nil {
 		return "", "", err
 	}
 
@@ -397,6 +468,144 @@ func CreateOrGetSmartAccount(ctx context.Context, db *database.DB, network strin
 	}
 
 	return owner.Address, predicted.Hex(), nil
+}
+
+func CheckSmartAccountCreationReadiness(ctx context.Context, db *database.DB, network string) (SmartAccountCreationReadiness, error) {
+	result := SmartAccountCreationReadiness{
+		Network:        network,
+		FailureReasons: []string{},
+		Warnings:       []string{},
+	}
+
+	if db == nil {
+		return result, errors.New("database is required")
+	}
+
+	walletSecrets, err := db.ListWalletSecrets(ctx)
+	if err != nil {
+		return result, err
+	}
+	if len(walletSecrets) == 0 {
+		result.FailureReasons = append(result.FailureReasons, "owner_wallet_missing")
+		return result, errors.New("no wallet found")
+	}
+
+	owner := walletSecrets[0]
+	result.OwnerAddress = owner.Address
+	if !common.IsHexAddress(owner.Address) {
+		result.FailureReasons = append(result.FailureReasons, "owner_wallet_invalid")
+		return result, errors.New("invalid owner address")
+	}
+
+	networkConfig := GetNetwork(network)
+	if len(networkConfig.RPC) == 0 {
+		result.FailureReasons = append(result.FailureReasons, "network_unsupported")
+		return result, fmt.Errorf("unsupported network: %s", network)
+	}
+
+	deployment, err := config.GetDeployment(network)
+	if err != nil {
+		result.FailureReasons = append(result.FailureReasons, "deployment_missing")
+		return result, err
+	}
+	result.FactoryAddress = deployment.FactoryAddress
+
+	entryPoint := strings.TrimSpace(deployment.EntryPointAddress)
+	if common.IsHexAddress(entryPoint) {
+		result.EntryPointAddress = common.HexToAddress(entryPoint).Hex()
+	}
+
+	if !common.IsHexAddress(deployment.FactoryAddress) {
+		result.FailureReasons = append(result.FailureReasons, "factory_address_invalid")
+		result.IsReady = false
+		return result, nil
+	}
+
+	client, err := dialEthereumClient(ctx, networkConfig.RPC[0])
+	if err != nil {
+		result.FailureReasons = append(result.FailureReasons, "rpc_unreachable")
+		result.IsReady = false
+		return result, nil
+	}
+	defer client.Close()
+
+	if _, err := clientChainID(ctx, client); err != nil {
+		result.FailureReasons = append(result.FailureReasons, "rpc_chainid_unavailable")
+		result.IsReady = false
+		return result, nil
+	}
+
+	factoryAddress := common.HexToAddress(deployment.FactoryAddress)
+	factoryCode, err := clientCodeAt(ctx, client, factoryAddress)
+	if err != nil {
+		result.FailureReasons = append(result.FailureReasons, "factory_check_failed")
+		result.IsReady = false
+		return result, nil
+	}
+	if len(factoryCode) == 0 {
+		result.FailureReasons = append(result.FailureReasons, "factory_not_deployed")
+	}
+
+	factory, err := NewFactory(factoryAddress, client)
+	if err != nil {
+		result.FailureReasons = append(result.FailureReasons, "factory_bind_failed")
+		result.IsReady = false
+		return result, nil
+	}
+
+	ownerAddress := common.HexToAddress(owner.Address)
+	predicted := common.Address{}
+	if result.EntryPointAddress != "" {
+		predicted, err = factory.GetAddressWithEntryPoint(&bind.CallOpts{Context: ctx}, ownerAddress, common.HexToAddress(result.EntryPointAddress))
+		if err != nil {
+			result.Warnings = append(result.Warnings, "entrypoint_prediction_failed_fallback_legacy")
+			predicted, err = factory.GetAddress(&bind.CallOpts{Context: ctx}, ownerAddress)
+		}
+	} else {
+		predicted, err = factory.GetAddress(&bind.CallOpts{Context: ctx}, ownerAddress)
+	}
+	if err != nil {
+		result.FailureReasons = append(result.FailureReasons, "smart_account_prediction_failed")
+		result.IsReady = false
+		return result, nil
+	}
+
+	result.SmartAccountAddress = predicted.Hex()
+	code, err := clientCodeAt(ctx, client, predicted)
+	if err != nil {
+		result.FailureReasons = append(result.FailureReasons, "smart_account_code_check_failed")
+		result.IsReady = false
+		return result, nil
+	}
+	result.SmartAccountExists = len(code) > 0
+
+	minGas := config.GetOwnerCreationMinGasWei(network)
+	result.OwnerRequiredMinGasWei = minGas.String()
+	ownerBalance, err := clientBalanceAt(ctx, client, ownerAddress)
+	if err != nil {
+		result.FailureReasons = append(result.FailureReasons, "owner_balance_check_failed")
+		result.IsReady = false
+		return result, nil
+	}
+	result.OwnerBalanceWei = ownerBalance.String()
+	result.HasSufficientOwnerBalance = ownerBalance.Cmp(minGas) >= 0
+	if !result.HasSufficientOwnerBalance {
+		result.FailureReasons = append(result.FailureReasons, "owner_insufficient_native_gas")
+	}
+
+	if aaDeployment, aaErr := config.ValidateAAConfig(network, true); aaErr == nil {
+		policy := LoadPaymasterPolicy(network)
+		hasSigner := strings.TrimSpace(getPaymasterSignerPrivateKey(network)) != ""
+		if !hasSigner {
+			result.Warnings = append(result.Warnings, "paymaster_signer_missing")
+		}
+		result.CanUseSponsoredCreate = strings.TrimSpace(aaDeployment.BundlerURL) != "" && common.IsHexAddress(aaDeployment.EntryPointAddress) && common.IsHexAddress(aaDeployment.PaymasterAddress) && policy.Enabled && hasSigner
+	} else {
+		result.Warnings = append(result.Warnings, "sponsored_creation_unavailable")
+	}
+
+	result.IsReady = result.SmartAccountExists || result.CanUseSponsoredCreate || result.HasSufficientOwnerBalance
+	return result, nil
 }
 
 func GetSmartAccount(ctx context.Context, db *database.DB, network string) (string, string, error) {
@@ -756,6 +965,7 @@ func sendTokenDirect(
 	txHash := signedTx.Hash().Hex()
 	if err := db.InsertTransactionIfMissing(ctx, database.TransactionRecord{
 		TxHash:          txHash,
+		UserOpHash:      "",
 		Nonce:           int64(nonce),
 		Chain:           network,
 		EntryPoint:      "",
@@ -856,7 +1066,7 @@ func sendTokenViaUserOperation(
 	}
 
 	if sponsored {
-		policy := LoadPaymasterPolicy()
+		policy := LoadPaymasterPolicy(network)
 		if err := ValidateSponsoredTransfer(policy, token, amountUnits); err != nil {
 			_ = db.RecordPaymasterValidation(ctx, database.PaymasterValidation{
 				SenderAddress:   sender.Address,
@@ -869,7 +1079,7 @@ func sendTokenViaUserOperation(
 		}
 
 		countToday, err := db.CountSponsoredOperationsToday(ctx, sender.Address)
-		if err == nil && countToday >= 50 {
+		if err == nil && countToday >= policy.DailyOperationLimit {
 			return SendResult{}, errors.New("sponsorship daily operation limit reached")
 		}
 
@@ -881,8 +1091,15 @@ func sendTokenViaUserOperation(
 			}
 		}
 
-		paymasterAndData, err := BuildPaymasterAndData(deployment.PaymasterAddress)
+		paymasterAndData, err := BuildSignedPaymasterAndData(deployment.PaymasterAddress, smartAccount, nonce, big.NewInt(int64(networkConfig.ChainID)), network)
 		if err != nil {
+			_ = db.RecordPaymasterValidation(ctx, database.PaymasterValidation{
+				SenderAddress:   sender.Address,
+				Decision:        "rejected",
+				RejectionReason: "signature_unavailable: " + err.Error(),
+				AmountUnits:     amountUnits.String(),
+				Metadata:        network,
+			})
 			return SendResult{}, err
 		}
 		op.PaymasterAndData = paymasterAndData
@@ -896,6 +1113,7 @@ func sendTokenViaUserOperation(
 	}
 
 	bundler := NewBundlerClient(deployment.BundlerURL)
+	logs.LogError(fmt.Sprintf("aa_send_start mode=%s network=%s token=%s sender=%s", sendMode, network, token.Symbol, smartAccount.Hex()))
 	if estimate, err := bundler.EstimateUserOperationGas(ctx, op, entryPointAddress.Hex()); err == nil {
 		op.PreVerificationGas = estimate.PreVerificationGas
 		op.VerificationGasLimit = estimate.VerificationGasLimit
@@ -910,6 +1128,7 @@ func sendTokenViaUserOperation(
 
 	sentUserOpHash, err := bundler.SendUserOperation(ctx, op, entryPointAddress.Hex())
 	if err != nil {
+		logs.LogError(fmt.Sprintf("aa_send_error mode=%s network=%s token=%s err=%s", sendMode, network, token.Symbol, err.Error()))
 		return SendResult{}, err
 	}
 	if strings.TrimSpace(sentUserOpHash) == "" {
@@ -953,6 +1172,7 @@ func sendTokenViaUserOperation(
 			Status:          "submitted",
 		})
 	}
+	logs.LogError(fmt.Sprintf("aa_send_submitted mode=%s network=%s token=%s userOpHash=%s", sendMode, network, token.Symbol, sentUserOpHash))
 
 	return SendResult{
 		OperationHash: sentUserOpHash,
@@ -962,6 +1182,126 @@ func sendTokenViaUserOperation(
 		Network:       network,
 		Token:         token.Symbol,
 	}, nil
+}
+
+func createSmartAccountViaUserOperation(
+	ctx context.Context,
+	db *database.DB,
+	client *ethclient.Client,
+	network string,
+	networkConfig networkDetails,
+	deployment config.Deployment,
+	sender database.WalletSecret,
+	ownerAddress common.Address,
+	predicted common.Address,
+	privateKey *ecdsa.PrivateKey,
+) (string, error) {
+	aaDeployment, err := config.ValidateAAConfig(network, true)
+	if err != nil {
+		return "", err
+	}
+	if !common.IsHexAddress(aaDeployment.EntryPointAddress) || !common.IsHexAddress(aaDeployment.FactoryAddress) {
+		return "", errors.New("sponsored smart-account creation requires valid entry point and factory")
+	}
+
+	factoryAddress := common.HexToAddress(aaDeployment.FactoryAddress)
+	entryPointAddress := common.HexToAddress(aaDeployment.EntryPointAddress)
+
+	initCallData, err := buildFactoryCreateInitCall(ownerAddress, entryPointAddress)
+	if err != nil {
+		return "", err
+	}
+	initCode := append(factoryAddress.Bytes(), initCallData...)
+
+	gasPrice, err := client.SuggestGasPrice(ctx)
+	if err != nil {
+		return "", err
+	}
+	priorityFee := new(big.Int).Div(gasPrice, big.NewInt(4))
+	if priorityFee.Sign() == 0 {
+		priorityFee = big.NewInt(1)
+	}
+
+	op := UserOperation{
+		Sender:               predicted,
+		Nonce:                big.NewInt(0),
+		InitCode:             initCode,
+		CallData:             []byte{},
+		CallGasLimit:         big.NewInt(500000),
+		VerificationGasLimit: big.NewInt(450000),
+		PreVerificationGas:   big.NewInt(90000),
+		MaxFeePerGas:         gasPrice,
+		MaxPriorityFeePerGas: priorityFee,
+		PaymasterAndData:     []byte{},
+	}
+
+	paymasterAndData, err := BuildSignedPaymasterAndData(aaDeployment.PaymasterAddress, predicted, op.Nonce, big.NewInt(int64(networkConfig.ChainID)), network)
+	if err != nil {
+		return "", err
+	}
+	op.PaymasterAndData = paymasterAndData
+
+	bundler := NewBundlerClient(aaDeployment.BundlerURL)
+	logs.LogError(fmt.Sprintf("aa_create_start network=%s sender=%s", network, predicted.Hex()))
+	if estimate, err := bundler.EstimateUserOperationGas(ctx, op, entryPointAddress.Hex()); err == nil {
+		op.PreVerificationGas = estimate.PreVerificationGas
+		op.VerificationGasLimit = estimate.VerificationGasLimit
+		op.CallGasLimit = estimate.CallGasLimit
+	}
+
+	signature, userOpHash, err := SignUserOperation(op, entryPointAddress, big.NewInt(int64(networkConfig.ChainID)), privateKey)
+	if err != nil {
+		return "", err
+	}
+	op.Signature = signature
+
+	sentUserOpHash, err := bundler.SendUserOperation(ctx, op, entryPointAddress.Hex())
+	if err != nil {
+		logs.LogError(fmt.Sprintf("aa_create_error network=%s sender=%s err=%s", network, predicted.Hex(), err.Error()))
+		return "", err
+	}
+	if strings.TrimSpace(sentUserOpHash) == "" {
+		sentUserOpHash = userOpHash.Hex()
+	}
+
+	if err := db.InsertTransactionIfMissing(ctx, database.TransactionRecord{
+		TxHash:          sentUserOpHash,
+		UserOpHash:      sentUserOpHash,
+		Nonce:           0,
+		Chain:           network,
+		EntryPoint:      entryPointAddress.Hex(),
+		Token:           "ACCOUNT",
+		TokenAddress:    deployment.FactoryAddress,
+		TokenDecimals:   0,
+		NativeToken:     false,
+		Amount:          "1",
+		TransactionType: "account_create",
+		State:           "pending",
+		BundlerStatus:   "submitted",
+		TxMode:          "userop",
+		SponsorshipMode: SendModeSponsored,
+		Note:            "Sponsored smart account creation",
+		Source:          ownerAddress.Hex(),
+		Destination:     predicted.Hex(),
+		ProviderID:      "",
+		WalletAddress:   sender.Address,
+		Counterparty:    predicted.Hex(),
+	}); err != nil {
+		return "", err
+	}
+
+	_ = db.RecordSponsoredOperation(ctx, database.SponsoredOperation{
+		UserOperationID: sentUserOpHash,
+		SenderAddress:   sender.Address,
+		Network:         network,
+		TokenAddress:    deployment.FactoryAddress,
+		Recipient:       predicted.Hex(),
+		AmountUnits:     "1",
+		Status:          "submitted",
+	})
+	logs.LogError(fmt.Sprintf("aa_create_submitted network=%s userOpHash=%s sender=%s", network, sentUserOpHash, predicted.Hex()))
+
+	return sentUserOpHash, nil
 }
 
 func SyncTransactionStatus(ctx context.Context, txHash string, network string) (string, error) {
@@ -1016,8 +1356,11 @@ func SyncUserOperationStatus(ctx context.Context, userOpHash string, network str
 	}
 
 	if receipt.Success {
+		logs.LogError(fmt.Sprintf("aa_receipt_success network=%s userOpHash=%s txHash=%s", network, userOpHash, strings.TrimSpace(receipt.TransactionHash)))
 		return "completed", strings.TrimSpace(receipt.TransactionHash), "included", nil
 	}
+
+	logs.LogError(fmt.Sprintf("aa_receipt_failed network=%s userOpHash=%s txHash=%s", network, userOpHash, strings.TrimSpace(receipt.TransactionHash)))
 
 	return "failed", strings.TrimSpace(receipt.TransactionHash), "failed", nil
 }
@@ -1117,6 +1460,20 @@ func minGasReserveWei(network string) *big.Int {
 	}
 }
 
+func buildFactoryCreateInitCall(ownerAddress common.Address, entryPointAddress common.Address) ([]byte, error) {
+	parsed, err := FactoryMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	if parsed.Methods["createAccountWithEntryPoint"].Name != "" {
+		return parsed.Pack("createAccountWithEntryPoint", ownerAddress, entryPointAddress)
+	}
+	if parsed.Methods["createAccount"].Name != "" {
+		return parsed.Pack("createAccount", ownerAddress)
+	}
+	return nil, errors.New("factory creation method not found in ABI")
+}
+
 func ListUSDCTransactions(ctx context.Context, db *database.DB, network string, limit, offset int) ([]database.TransactionRecord, error) {
 	return ListTokenTransactions(ctx, db, network, "usdc", limit, offset)
 }
@@ -1150,9 +1507,12 @@ func ListTokenTransactions(ctx context.Context, db *database.DB, network string,
 		}
 
 		if tx.TxMode == "userop" || tx.UserOpHash != "" {
-			status, _, bundlerStatus, err := SyncUserOperationStatus(ctx, tx.TxHash, network)
+			status, finalTxHash, bundlerStatus, err := SyncUserOperationStatus(ctx, tx.TxHash, network)
 			if err != nil {
 				continue
+			}
+			if strings.TrimSpace(finalTxHash) != "" {
+				transactions[idx].TxHash = finalTxHash
 			}
 			if status != tx.State || bundlerStatus != tx.BundlerStatus {
 				_ = db.UpdateTransactionSettlement(ctx, tx.TxHash, status, bundlerStatus)
@@ -1211,9 +1571,12 @@ func ListAllTransactions(ctx context.Context, db *database.DB, network string, l
 		}
 
 		if tx.TxMode == "userop" || tx.UserOpHash != "" {
-			status, _, bundlerStatus, err := SyncUserOperationStatus(ctx, tx.TxHash, network)
+			status, finalTxHash, bundlerStatus, err := SyncUserOperationStatus(ctx, tx.TxHash, network)
 			if err != nil {
 				continue
+			}
+			if strings.TrimSpace(finalTxHash) != "" {
+				items[idx].TxHash = finalTxHash
 			}
 			if status != tx.State || bundlerStatus != tx.BundlerStatus {
 				_ = db.UpdateTransactionSettlement(ctx, tx.TxHash, status, bundlerStatus)

@@ -182,3 +182,62 @@ func TestRecordPaymasterValidation(t *testing.T) {
 		t.Fatalf("RecordPaymasterValidation() error = %v", err)
 	}
 }
+
+func TestUpdateUserOperationSettlement(t *testing.T) {
+	db, err := Open(context.Background(), t.TempDir(), "password", newTestSecureKeyStore())
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+	if err := db.InsertTransactionIfMissing(ctx, TransactionRecord{
+		TxHash:          "0xuserop",
+		UserOpHash:      "0xuserop",
+		Nonce:           1,
+		Chain:           "ethereum-sepolia",
+		Token:           "USDC",
+		Amount:          "1",
+		TransactionType: "transfer",
+		State:           "pending",
+		BundlerStatus:   "submitted",
+		TxMode:          "userop",
+		SponsorshipMode: "sponsored",
+		WalletAddress:   "0x1111111111111111111111111111111111111111",
+	}); err != nil {
+		t.Fatalf("InsertTransactionIfMissing() error = %v", err)
+	}
+
+	if err := db.RecordSponsoredOperation(ctx, SponsoredOperation{
+		UserOperationID: "0xuserop",
+		SenderAddress:   "0x1111111111111111111111111111111111111111",
+		Network:         "ethereum-sepolia",
+		TokenAddress:    "0x1",
+		Recipient:       "0x2",
+		AmountUnits:     "1",
+		Status:          "submitted",
+	}); err != nil {
+		t.Fatalf("RecordSponsoredOperation() error = %v", err)
+	}
+
+	if err := db.UpdateUserOperationSettlement(ctx, "0xuserop", "0xfinaltx", "completed", "included"); err != nil {
+		t.Fatalf("UpdateUserOperationSettlement() error = %v", err)
+	}
+
+	list, err := db.ListTransactions(ctx, "0x1111111111111111111111111111111111111111", "USDC", 10, 0)
+	if err != nil {
+		t.Fatalf("ListTransactions() error = %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 transaction, got %d", len(list))
+	}
+	if list[0].TxHash != "0xfinaltx" {
+		t.Fatalf("expected final tx hash, got %s", list[0].TxHash)
+	}
+	if list[0].State != "completed" {
+		t.Fatalf("expected completed state, got %s", list[0].State)
+	}
+	if list[0].BundlerStatus != "included" {
+		t.Fatalf("expected included bundler status, got %s", list[0].BundlerStatus)
+	}
+}

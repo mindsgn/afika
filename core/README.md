@@ -31,6 +31,7 @@ Wallet/account:
 - `CreateEthereumWallet(name string) (string, error)`
 - `OpenOrCreateWallet(name string) (string, error)`
 - `ListAccounts() (string, error)`
+- `GetSmartAccountCreationReadiness(network string) (string, error)`
 - `CreateSmartContractAccount(network string) (string, error)`
 - `GetSmartContractAccount(network string) (string, error)`
 
@@ -57,6 +58,17 @@ History/backup:
 - `auto`: try AA path and fallback to direct tx
 - `direct`: force legacy direct tx
 - `sponsored`: require sponsorship (no direct fallback)
+
+Smart-account creation behavior:
+- preflight checks owner gas threshold + sponsorship availability
+- sponsored UserOp deployment is attempted first when available
+- direct factory fallback is allowed only when owner has sufficient native gas
+- deterministic error is returned when both paths are unavailable
+
+Sponsored path behavior:
+- sponsored creation and sponsored send both build signed `paymasterAndData` payloads
+- readiness marks sponsorship unavailable when paymaster signer key is missing
+- user-operation settlement now links `userOpHash` to final included `txHash` for history consistency
 
 ## Production Configuration Gate
 
@@ -86,6 +98,19 @@ Key contract behavior:
 - Sponsored mode enforces USDC-only policy and strict caps from policy/env.
 - UserOp lifecycle persists `userOpHash` and bundler settlement status for auditability.
 
+## Sponsorship Environment
+
+Signer key:
+- `POCKET_PAYMASTER_SIGNER_PRIVATE_KEY_<NETWORK>`
+- `POCKET_PAYMASTER_SIGNER_PRIVATE_KEY` (fallback)
+
+Policy and reliability controls:
+- `POCKET_PAYMASTER_DAILY_OP_LIMIT_<NETWORK>` (default `50`)
+- `POCKET_BUNDLER_RETRY_MAX_ATTEMPTS` (default `3`)
+- `POCKET_BUNDLER_RETRY_BACKOFF_MS` (default `400`)
+
+If the signer key is missing, sponsored mode is rejected with a deterministic configuration error.
+
 ## Build and Test
 
 From `core/`:
@@ -106,3 +131,9 @@ Out of scope for v1:
 - dynamic token sponsorship expansion
 - advanced social recovery modules
 - multi-paymaster orchestration
+
+## Creation Gas Threshold Policy
+
+Owner wallet minimum native gas for direct creation uses network defaults and can be overridden with:
+- `POCKET_OWNER_MIN_GAS_WEI_ETHEREUM_SEPOLIA`
+- `POCKET_OWNER_MIN_GAS_WEI_ETHEREUM_MAINNET`

@@ -123,6 +123,25 @@ function buildPaymasterAndData(
   return concat([paymasterAddress as `0x${string}`, sig]) as `0x${string}`;
 }
 
+async function applyValidPaymasterSignature(
+  userOp: any,
+  signerWallet: any,
+  sender: string,
+  nonce: bigint,
+  chainId: bigint,
+  paymasterAddress: string,
+) {
+  const sig = await signPaymasterApproval(
+    signerWallet,
+    sender,
+    nonce,
+    chainId,
+    paymasterAddress,
+  );
+  userOp.paymasterAndData = buildPaymasterAndData(paymasterAddress, sig);
+  return userOp;
+}
+
 // ---------------------------------------------------------------------------
 // Test suite
 // ---------------------------------------------------------------------------
@@ -180,9 +199,9 @@ describe("USDCPaymaster", async function () {
     return { usdc, paymaster, paymasterAsEP, factory };
   }
 
-  /** Deploy with signature validation disabled (paymasterSigner = address(0)). */
+  /** Deploy with signature validation enabled and admin signer. */
   async function deployNoSig() {
-    return deploySystem("0x0000000000000000000000000000000000000000");
+    return deploySystem();
   }
 
   // =========================================================================
@@ -328,7 +347,6 @@ describe("USDCPaymaster", async function () {
     });
   });
 
-  /*
   // =========================================================================
   // validatePaymasterUserOp — regular USDC transfer path
   // =========================================================================
@@ -351,6 +369,8 @@ describe("USDCPaymaster", async function () {
         ...overrides,
       };
 
+      await applyValidPaymasterSignature(userOp, admin, user.account.address, 0n, chainId, paymaster.address);
+
       return paymasterAsEP.read.validatePaymasterUserOp([userOp, ZERO_HASH, 0n]);
     }
 
@@ -370,6 +390,7 @@ describe("USDCPaymaster", async function () {
         recipient.account.address,
         amount,
       );
+      await applyValidPaymasterSignature(userOp, admin, user.account.address, 0n, chainId, paymaster.address);
 
       const [context] = await paymasterAsEP.read.validatePaymasterUserOp([
         userOp,
@@ -391,6 +412,7 @@ describe("USDCPaymaster", async function () {
         recipient.account.address,
         parseUnits("50", 6),
       );
+      await applyValidPaymasterSignature(userOp, admin, user.account.address, 0n, chainId, paymaster.address);
 
       await assert.rejects(
         paymaster.read.validatePaymasterUserOp([userOp, ZERO_HASH, 0n]),
@@ -434,6 +456,7 @@ describe("USDCPaymaster", async function () {
           ],
         }),
       };
+      await applyValidPaymasterSignature(fakeOp, admin, user.account.address, 0n, chainId, paymasterAsEP.address);
 
       await assert.rejects(
         paymasterAsEP.read.validatePaymasterUserOp([fakeOp, ZERO_HASH, 0n]),
@@ -452,6 +475,7 @@ describe("USDCPaymaster", async function () {
         recipient.account.address,
         overLimit,
       );
+      await applyValidPaymasterSignature(userOp, admin, user.account.address, 0n, chainId, paymasterAsEP.address);
 
       await assert.rejects(
         paymasterAsEP.read.validatePaymasterUserOp([userOp, ZERO_HASH, 0n]),
@@ -460,15 +484,16 @@ describe("USDCPaymaster", async function () {
     });
 
     it("rejects when sender has insufficient USDC balance  (Fix #7)", async function () {
-      const { paymasterAsEP } = await deployNoSig();
+      const { paymasterAsEP, paymaster, usdc } = await deployNoSig();
       // No mint — user has 0 USDC
 
       const userOp = buildUsdcTransferUserOp(
         user.account.address,
-        (await (await deployNoSig()).usdc.address), // different instance is fine for this check
+        usdc.address,
         recipient.account.address,
         parseUnits("50", 6),
       );
+      await applyValidPaymasterSignature(userOp, admin, user.account.address, 0n, chainId, paymaster.address);
 
       await assert.rejects(
         paymasterAsEP.read.validatePaymasterUserOp([userOp, ZERO_HASH, 0n]),
@@ -490,6 +515,7 @@ describe("USDCPaymaster", async function () {
         recipient.account.address,
         parseUnits("300", 6),
       );
+      await applyValidPaymasterSignature(op1, admin, user.account.address, 0n, chainId, paymasterAsEP.address);
       const [ctx1] = await paymasterAsEP.read.validatePaymasterUserOp([op1, ZERO_HASH, 0n]);
 
       // Simulate postOp writing the accounting
@@ -502,6 +528,7 @@ describe("USDCPaymaster", async function () {
         recipient.account.address,
         parseUnits("300", 6),
       );
+      await applyValidPaymasterSignature(op2, admin, user.account.address, 0n, chainId, paymasterAsEP.address);
 
       await assert.rejects(
         paymasterAsEP.read.validatePaymasterUserOp([op2, ZERO_HASH, 0n]),
@@ -516,7 +543,7 @@ describe("USDCPaymaster", async function () {
 
   describe("postOp", async function () {
     it("writes dailySponsored on opSucceeded", async function () {
-      const { usdc, paymasterAsEP } = await deployNoSig();
+      const { usdc, paymasterAsEP, paymaster } = await deployNoSig();
       const amount = parseUnits("50", 6);
       await usdc.write.mint([user.account.address, amount]);
 
@@ -526,6 +553,7 @@ describe("USDCPaymaster", async function () {
         recipient.account.address,
         amount,
       );
+      await applyValidPaymasterSignature(userOp, admin, user.account.address, 0n, chainId, paymaster.address);
 
       const [context] = await paymasterAsEP.read.validatePaymasterUserOp([
         userOp,
@@ -550,7 +578,7 @@ describe("USDCPaymaster", async function () {
     });
 
     it("does NOT write dailySponsored when op reverts (mode=opReverted)  (Fix #2)", async function () {
-      const { usdc, paymasterAsEP } = await deployNoSig();
+      const { usdc, paymasterAsEP, paymaster } = await deployNoSig();
       const amount = parseUnits("50", 6);
       await usdc.write.mint([user.account.address, amount]);
 
@@ -560,6 +588,7 @@ describe("USDCPaymaster", async function () {
         recipient.account.address,
         amount,
       );
+      await applyValidPaymasterSignature(userOp, admin, user.account.address, 0n, chainId, paymaster.address);
 
       const [context] = await paymasterAsEP.read.validatePaymasterUserOp([
         userOp,
@@ -578,7 +607,7 @@ describe("USDCPaymaster", async function () {
     });
 
     it("does NOT write dailySponsored for deployment ops", async function () {
-      const { paymasterAsEP, factory } = await deployNoSig();
+      const { paymasterAsEP, factory, paymaster } = await deployNoSig();
 
       const futureAddr = await factory.read.getAddressWithEntryPoint([
         user.account.address,
@@ -605,6 +634,7 @@ describe("USDCPaymaster", async function () {
         ...createEmptyUserOp(futureAddr),
         initCode,
       };
+      await applyValidPaymasterSignature(deployOp, admin, futureAddr, 0n, chainId, paymaster.address);
 
       const [context] = await paymasterAsEP.read.validatePaymasterUserOp([
         deployOp,
@@ -637,7 +667,7 @@ describe("USDCPaymaster", async function () {
 
   describe("gasless wallet deployment via initCode", async function () {
     it("approves a deployment op from a trusted factory", async function () {
-      const { paymasterAsEP, factory } = await deployNoSig();
+      const { paymasterAsEP, factory, paymaster } = await deployNoSig();
 
       const futureAddr = await factory.read.getAddressWithEntryPoint([
         user.account.address,
@@ -663,6 +693,7 @@ describe("USDCPaymaster", async function () {
         ...createEmptyUserOp(futureAddr),
         initCode,
       };
+      await applyValidPaymasterSignature(deployOp, admin, futureAddr, 0n, chainId, paymaster.address);
 
       const [context, validationData] = await paymasterAsEP.read.validatePaymasterUserOp([
         deployOp,
@@ -675,7 +706,7 @@ describe("USDCPaymaster", async function () {
     });
 
     it("rejects a deployment op from an untrusted factory", async function () {
-      const { paymasterAsEP } = await deployNoSig();
+      const { paymasterAsEP, paymaster } = await deployNoSig();
 
       const fakeFactory = untrustedFactory.account.address;
       const fakeInitCode = (fakeFactory + "deadbeef") as `0x${string}`;
@@ -684,6 +715,7 @@ describe("USDCPaymaster", async function () {
         ...createEmptyUserOp(user.account.address),
         initCode: fakeInitCode,
       };
+      await applyValidPaymasterSignature(deployOp, admin, user.account.address, 0n, chainId, paymaster.address);
 
       await assert.rejects(
         paymasterAsEP.read.validatePaymasterUserOp([deployOp, ZERO_HASH, 0n]),
@@ -692,7 +724,7 @@ describe("USDCPaymaster", async function () {
     });
 
     it("emits WalletDeploymentSponsored event", async function () {
-      const { paymasterAsEP, factory } = await deployNoSig();
+      const { paymasterAsEP, factory, paymaster } = await deployNoSig();
 
       const futureAddr = await factory.read.getAddressWithEntryPoint([
         user.account.address,
@@ -718,6 +750,7 @@ describe("USDCPaymaster", async function () {
         ...createEmptyUserOp(futureAddr),
         initCode,
       };
+      await applyValidPaymasterSignature(deployOp, admin, futureAddr, 0n, chainId, paymaster.address);
 
       // validatePaymasterUserOp is a read, but the event fires from the EntryPoint call
       // We use write here to capture the event (some frameworks require a tx for event assertions)

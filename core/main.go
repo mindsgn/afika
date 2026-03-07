@@ -106,6 +106,22 @@ type AAReadiness struct {
 	SponsorshipReady     bool   `json:"sponsorshipReady"`
 }
 
+type SmartAccountCreationReadiness struct {
+	Network                   string   `json:"network"`
+	OwnerAddress              string   `json:"ownerAddress"`
+	FactoryAddress            string   `json:"factoryAddress"`
+	EntryPointAddress         string   `json:"entryPointAddress"`
+	SmartAccountAddress       string   `json:"smartAccountAddress"`
+	SmartAccountExists        bool     `json:"smartAccountExists"`
+	OwnerBalanceWei           string   `json:"ownerBalanceWei"`
+	OwnerRequiredMinGasWei    string   `json:"ownerRequiredMinGasWei"`
+	HasSufficientOwnerBalance bool     `json:"hasSufficientOwnerBalance"`
+	CanUseSponsoredCreate     bool     `json:"canUseSponsoredCreate"`
+	IsReady                   bool     `json:"isReady"`
+	FailureReasons            []string `json:"failureReasons"`
+	Warnings                  []string `json:"warnings"`
+}
+
 type walletBackup struct {
 	Name       string `json:"name"`
 	Type       string `json:"type"`
@@ -398,6 +414,42 @@ func (w *WalletCore) CreateSmartContractAccount(network string) (string, error) 
 		"ownerAddress":   ownerAddress,
 		"accountAddress": accountAddress,
 		"network":        resolvedNetwork,
+	}
+
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+
+	return string(encoded), nil
+}
+
+func (w *WalletCore) GetSmartAccountCreationReadiness(network string) (string, error) {
+	db, err := w.getDB()
+	if err != nil {
+		return "", err
+	}
+
+	resolvedNetwork := resolveAppNetwork(network)
+	readiness, err := ethereum.CheckSmartAccountCreationReadiness(context.Background(), db, resolvedNetwork)
+	if err != nil {
+		return "", err
+	}
+
+	payload := SmartAccountCreationReadiness{
+		Network:                   readiness.Network,
+		OwnerAddress:              readiness.OwnerAddress,
+		FactoryAddress:            readiness.FactoryAddress,
+		EntryPointAddress:         readiness.EntryPointAddress,
+		SmartAccountAddress:       readiness.SmartAccountAddress,
+		SmartAccountExists:        readiness.SmartAccountExists,
+		OwnerBalanceWei:           readiness.OwnerBalanceWei,
+		OwnerRequiredMinGasWei:    readiness.OwnerRequiredMinGasWei,
+		HasSufficientOwnerBalance: readiness.HasSufficientOwnerBalance,
+		CanUseSponsoredCreate:     readiness.CanUseSponsoredCreate,
+		IsReady:                   readiness.IsReady,
+		FailureReasons:            readiness.FailureReasons,
+		Warnings:                  readiness.Warnings,
 	}
 
 	encoded, err := json.Marshal(payload)

@@ -10,7 +10,7 @@ import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
 import PocketCore from '@/modules/pocket-module';
 import { Directory, Paths } from 'expo-file-system';
-import useWallet, { AAReadiness, WalletTransaction } from '@/@src/store/wallet';
+import useWallet, { AAReadiness, SmartAccountCreationReadiness, WalletTransaction } from '@/@src/store/wallet';
 
 const PIN_LENGTH = 5;
 const DEFAULT_NETWORK: 'ethereum-mainnet' | 'ethereum-sepolia' = process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 'ethereum-mainnet' : 'ethereum-sepolia';
@@ -22,10 +22,27 @@ export default function PasswordScreen() {
     setBalancesJson,
     setTransactions,
     setAAReadiness,
+    setCreationReadiness,
     clearWalletState,
   } = useWallet();
   const [confirmationPin, setConfirmationPin] = useState<string[]>([]);
   const [status, setStatus] = useState('');
+
+  const formatWeiHint = (wei: string) => {
+    const clean = (wei || '').trim();
+    if (!clean) return '';
+    if (clean.length <= 18) return `~0.${clean.padStart(18, '0').slice(0, 4)} ETH`;
+    const whole = clean.slice(0, clean.length - 18);
+    const fraction = clean.slice(clean.length - 18, clean.length - 14);
+    return `~${whole}.${fraction} ETH`;
+  };
+
+  const preflightMessage = (readiness: SmartAccountCreationReadiness) => {
+    const reasons = readiness.failureReasons?.join(', ') || 'unknown';
+    const minWei = readiness.ownerRequiredMinGasWei || '0';
+    const ethHint = formatWeiHint(minWei);
+    return `Cannot create wallet yet. Reasons: ${reasons}. Fund your owner wallet with at least ${minWei} wei ${ethHint} or enable sponsored creation.`;
+  };
   const onPressNumber = async (value: string) => {
     if (confirmationPin.length >= PIN_LENGTH) return;
 
@@ -48,9 +65,20 @@ export default function PasswordScreen() {
       const walletAddress = await PocketCore.openOrCreateWallet('Main Wallet');
       setWalletAddress(walletAddress);
 
+      const creationRaw = await PocketCore.getSmartAccountCreationReadiness(DEFAULT_NETWORK);
+      const creationReadiness = JSON.parse(creationRaw) as SmartAccountCreationReadiness;
+      setCreationReadiness(creationReadiness);
+      if (!creationReadiness.isReady && !creationReadiness.smartAccountExists) {
+        throw new Error(preflightMessage(creationReadiness));
+      }
+
       const accountRaw = await PocketCore.createSmartContractAccount(DEFAULT_NETWORK);
       const accountPayload = JSON.parse(accountRaw) as { accountAddress?: string };
       setSmartAccountAddress(accountPayload.accountAddress || '');
+
+      const refreshedCreationRaw = await PocketCore.getSmartAccountCreationReadiness(DEFAULT_NETWORK);
+      const refreshedCreationReadiness = JSON.parse(refreshedCreationRaw) as SmartAccountCreationReadiness;
+      setCreationReadiness(refreshedCreationReadiness);
 
       const readinessRaw = await PocketCore.getAAReadiness(DEFAULT_NETWORK);
       const readiness = JSON.parse(readinessRaw) as AAReadiness;

@@ -37,6 +37,7 @@ The Expo bridge (`PocketCore`) exposes the `WalletCore` facade methods, includin
 - `getAccountSummary(network)`
 - `getAccountSnapshot(network)`
 - `getAAReadiness(network)`
+- `getSmartAccountCreationReadiness(network)`
 - `createSmartContractAccount(network)`
 - `getSmartContractAccount(network)`
 - `sendUsdcWithMode(network, destination, amount, note, providerID, sendMode)`
@@ -58,6 +59,7 @@ Pattern:
 - `POCKET_ENTRY_POINT_<NETWORK>`
 - `POCKET_BUNDLER_URL_<NETWORK>`
 - `POCKET_PAYMASTER_<NETWORK>`
+- `POCKET_OWNER_MIN_GAS_WEI_<NETWORK>`
 
 Example network suffixes:
 
@@ -66,13 +68,47 @@ Example network suffixes:
 
 Sponsorship mode requires EntryPoint + bundler + paymaster configuration.
 
+For sponsored creation and sponsored sends, core also requires a paymaster signer key.
+
+Pattern:
+
+- `POCKET_PAYMASTER_SIGNER_PRIVATE_KEY_<NETWORK>`
+- `POCKET_PAYMASTER_SIGNER_PRIVATE_KEY`
+
+Network-specific key takes priority over global key.
+
+Optional sponsorship and transport tuning:
+
+- `POCKET_PAYMASTER_DAILY_OP_LIMIT_<NETWORK>` (default `50`)
+- `POCKET_BUNDLER_RETRY_MAX_ATTEMPTS` (default `3`)
+- `POCKET_BUNDLER_RETRY_BACKOFF_MS` (default `400`)
+
+`getAAReadiness` reports infrastructure readiness. Use `getSmartAccountCreationReadiness` before account creation to validate owner gas/sponsorship and hard-block onboarding on deterministic failure reasons.
+
+## Sepolia sponsorship smoke check
+
+Use this script before mobile QA to confirm on-chain sponsorship prerequisites:
+
+```bash
+cd contract
+npx hardhat run scripts/smoke-sepolia.ts --network sepolia
+```
+
+The script verifies:
+
+- factory and paymaster bytecode presence
+- paymaster EntryPoint wiring
+- non-zero paymaster signer
+- trusted factory registration
+- non-zero paymaster deposit
+
 ## Validation commands
 
 ### Contracts
 
 ```bash
 cd contract
-npm test
+npx hardhat test
 ```
 
 ### Go core

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math/big"
 	"os"
 	"strings"
 	"testing"
@@ -116,5 +117,25 @@ func TestValidateAAConfigSucceedsForSepoliaWhenEnvProvided(t *testing.T) {
 	}
 	if deployment.PaymasterAddress != "0x7F1BE467e9f0c2731ab9E8a646cF5972E71A66d8" {
 		t.Fatalf("unexpected paymaster address: %s", deployment.PaymasterAddress)
+	}
+}
+
+func TestGetOwnerCreationMinGasWeiDefaults(t *testing.T) {
+	sep := GetOwnerCreationMinGasWei("ethereum-sepolia")
+	if sep.Cmp(big.NewInt(3_000_000_000_000_000)) != 0 {
+		t.Fatalf("unexpected sepolia min gas: %s", sep.String())
+	}
+
+	mainnet := GetOwnerCreationMinGasWei("ethereum-mainnet")
+	if mainnet.Cmp(big.NewInt(15_000_000_000_000_000)) != 0 {
+		t.Fatalf("unexpected mainnet min gas: %s", mainnet.String())
+	}
+}
+
+func TestGetOwnerCreationMinGasWeiEnvOverride(t *testing.T) {
+	t.Setenv("POCKET_OWNER_MIN_GAS_WEI_ETHEREUM_SEPOLIA", "4200000000000000")
+	value := GetOwnerCreationMinGasWei("ethereum-sepolia")
+	if value.Cmp(big.NewInt(4_200_000_000_000_000)) != 0 {
+		t.Fatalf("unexpected env override value: %s", value.String())
 	}
 }

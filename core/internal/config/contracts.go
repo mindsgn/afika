@@ -2,7 +2,9 @@ package config
 
 import (
 	"errors"
+	"math/big"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -92,4 +94,39 @@ func ValidateAAConfig(network string, requirePaymaster bool) (Deployment, error)
 func envName(network string, kind string) string {
 	name := strings.ToUpper(strings.ReplaceAll(network, "-", "_"))
 	return "POCKET_" + kind + "_" + name
+}
+
+func GetOwnerCreationMinGasWei(network string) *big.Int {
+	networkKey := strings.TrimSpace(strings.ToLower(network))
+	defaultValue := defaultOwnerCreationMinGasWei(networkKey)
+	value := strings.TrimSpace(os.Getenv(envName(networkKey, "OWNER_MIN_GAS_WEI")))
+	if value == "" {
+		return defaultValue
+	}
+
+	if strings.HasPrefix(value, "0x") || strings.HasPrefix(value, "0X") {
+		parsed := new(big.Int)
+		if _, ok := parsed.SetString(value[2:], 16); ok && parsed.Sign() > 0 {
+			return parsed
+		}
+		return defaultValue
+	}
+
+	intValue, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || intValue <= 0 {
+		return defaultValue
+	}
+
+	return big.NewInt(intValue)
+}
+
+func defaultOwnerCreationMinGasWei(network string) *big.Int {
+	switch network {
+	case "ethereum-sepolia":
+		return big.NewInt(3_000_000_000_000_000) // 0.003 ETH
+	case "ethereum-mainnet":
+		return big.NewInt(15_000_000_000_000_000) // 0.015 ETH
+	default:
+		return big.NewInt(5_000_000_000_000_000) // 0.005 ETH
+	}
 }
