@@ -1,6 +1,7 @@
 package ethereum
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/sha256"
@@ -1731,26 +1732,324 @@ func ListAllTransactions(ctx context.Context, db *database.DB, network string, l
 	return items, nil
 }
 
-func GetNetwork(network string) networkDetails {
-	switch network {
-	case "ethereum-mainnet", "mainnet":
-		rpcList := []string{
-			"https://eth.llamarpc.com",
-			"https://rpc.ankr.com/eth",
+// ---------------------------------------------------------------------------
+// Inbound Transfer Sync
+// ---------------------------------------------------------------------------
+
+const (
+	// erc20TransferTopic is keccak256("Transfer(address,address,uint256)").
+	erc20TransferTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+	// inboundSyncBlockDepth is how many blocks back to scan for inbound transfers.
+	inboundSyncBlockDepth = uint64(10_000)
+)
+
+// inboundTransferClient abstracts the subset of ethclient.Client used by
+// FetchInboundTransfers so the function is fully unit-testable.
+type inboundTransferClient interface {
+	BlockNumber(ctx context.Context) (uint64, error)
+	FilterLogs(ctx context.Context, q ethereum.FilterQuery) ([]types.Log, error)
+	Close()
+}
+
+// dialInboundClient is overridable for tests.
+var dialInboundClient = func(ctx context.Context, url string) (inboundTransferClient, error) {
+	c, err := ethclient.DialContext(ctx, url)
+	return c, err
+}
+
+type alchemyAssetTransfer struct {
+	Hash  string  `json:"hash"`
+	From  string  `json:"from"`
+	To    string  `json:"to"`
+	Value float64 `json:"value"`
+	Asset string  `json:"asset"`
+}
+
+type alchemyTransfersResponse struct {
+	Result *struct {
+		Transfers []alchemyAssetTransfer `json:"transfers"`
+	} `json:"result"`
+	Error *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// FetchInboundTransfers fetches on-chain transfers received by walletAddress
+// on the given network for the last inboundSyncBlockDepth blocks.
+//
+// ERC-20 transfers are fetched via eth_getLogs (standard, works on all
+// providers). Native ETH transfers are fetched via alchemy_getAssetTransfers
+// and silently skipped when the provider does not support that method.
+func FetchInboundTransfers(ctx context.Context, walletAddress string, network string) ([]database.TransactionRecord, error) {
+	if strings.TrimSpace(walletAddress) == "" {
+		return nil, errors.New("wallet address is required")
+	}
+	if !common.IsHexAddress(walletAddress) {
+		return nil, errors.New("invalid wallet address")
+	}
+
+	networkConfig := GetNetwork(network)
+	if len(networkConfig.RPC) == 0 {
+		return nil, fmt.Errorf("unsupported network: %s", network)
+	}
+
+	client, err := dialInboundClient(ctx, networkConfig.RPC[0])
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+
+	latestBlock, err := client.BlockNumber(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var fromBlock *big.Int
+	if latestBlock > inboundSyncBlockDepth {
+		fromBlock = new(big.Int).SetUint64(latestBlock - inboundSyncBlockDepth)
+	} else {
+		fromBlock = big.NewInt(0)
+	}
+
+	results := make([]database.TransactionRecord, 0)
+	ownerAddr := common.HexToAddress(walletAddress)
+	toTopic := common.BytesToHash(ownerAddr.Bytes())
+	transferTopic := common.HexToHash(erc20TransferTopic)
+
+	tokens := tokenRegistry[strings.ToLower(strings.TrimSpace(network))]
+	for _, token := range tokens {
+		if token.IsNative {
+			continue
 		}
 
-		return networkDetails{
-			Name:       "ethereum",
-			ChainID:    1,
-			ChainIDHex: "0x1",
-			Currency:   "ETH",
-			Mainnet:    true,
-			RPC:        rpcList,
+		query := ethereum.FilterQuery{
+			Addresses: []common.Address{common.HexToAddress(token.Address)},
+			Topics: [][]common.Hash{
+				{transferTopic}, // topic[0]: Transfer event
+				{},              // topic[1]: any sender
+				{toTopic},       // topic[2]: recipient = walletAddress
+			},
+			FromBlock: fromBlock,
 		}
-	case "ethereum-sepolia", "sepolia", "testnet":
+
+		logs, err := client.FilterLogs(ctx, query)
+		if err != nil {
+			// Non-fatal: a provider rate-limit or unsupported filter; continue with other tokens.
+			continue
+		}
+
+		for _, l := range logs {
+			if len(l.Topics) < 3 || len(l.Data) < 32 {
+				continue
+			}
+			fromAddr := common.HexToAddress(l.Topics[1].Hex()).Hex()
+			rawAmount := new(big.Int).SetBytes(l.Data[:32])
+			amount := formatTokenUnits(rawAmount, token.Decimals)
+
+			results = append(results, database.TransactionRecord{
+				TxHash:          l.TxHash.Hex(),
+				Chain:           network,
+				Token:           token.Symbol,
+				TokenAddress:    token.Address,
+				TokenDecimals:   token.Decimals,
+				NativeToken:     false,
+				Amount:          amount,
+				TransactionType: "credit",
+				State:           "completed",
+				TxMode:          "external",
+				Source:          fromAddr,
+				Destination:     walletAddress,
+				WalletAddress:   walletAddress,
+				Counterparty:    fromAddr,
+			})
+		}
+	}
+
+	// Attempt native ETH inbound via alchemy_getAssetTransfers.
+	// Silently skipped when the provider does not support that method.
+	if ethRecs, err := fetchNativeInboundViaAlchemy(ctx, networkConfig.RPC[0], walletAddress, fromBlock, latestBlock, network); err == nil {
+		results = append(results, ethRecs...)
+	}
+
+	return results, nil
+}
+
+// fetchNativeInboundViaAlchemy calls alchemy_getAssetTransfers to retrieve
+// incoming native ETH transfers. Returns nil, nil when the RPC endpoint does
+// not support the method (e.g., public nodes).
+func fetchNativeInboundViaAlchemy(
+	ctx context.Context,
+	rpcURL string,
+	walletAddress string,
+	fromBlock *big.Int,
+	toBlock uint64,
+	network string,
+) ([]database.TransactionRecord, error) {
+	payload, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "alchemy_getAssetTransfers",
+		"params": []any{
+			map[string]any{
+				"fromBlock":        "0x" + fromBlock.Text(16),
+				"toBlock":          fmt.Sprintf("0x%x", toBlock),
+				"toAddress":        walletAddress,
+				"category":         []string{"external"},
+				"excludeZeroValue": true,
+				"maxCount":         "0x64",
+			},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rpcURL, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var parsed alchemyTransfersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return nil, err
+	}
+	if parsed.Error != nil || parsed.Result == nil {
+		// Method not supported or empty; skip silently.
+		return nil, nil
+	}
+
+	scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)
+	records := make([]database.TransactionRecord, 0, len(parsed.Result.Transfers))
+	for _, t := range parsed.Result.Transfers {
+		if !strings.EqualFold(t.To, walletAddress) {
+			continue
+		}
+		weiFloat := new(big.Float).Mul(big.NewFloat(t.Value), new(big.Float).SetInt(scale))
+		weiInt, _ := weiFloat.Int(nil)
+		amount := formatTokenUnits(weiInt, 18)
+
+		records = append(records, database.TransactionRecord{
+			TxHash:          t.Hash,
+			Chain:           network,
+			Token:           "ETH",
+			NativeToken:     true,
+			TokenDecimals:   18,
+			Amount:          amount,
+			TransactionType: "credit",
+			State:           "completed",
+			TxMode:          "external",
+			Source:          t.From,
+			Destination:     walletAddress,
+			WalletAddress:   walletAddress,
+			Counterparty:    t.From,
+		})
+	}
+	return records, nil
+}
+
+func GetNetwork(network string) networkDetails {
+	switch network {
+	/*
+		case "ethereum-mainnet", "mainnet":
+			rpcList := []string{
+				"https://eth.llamarpc.com",
+				"https://rpc.ankr.com/eth",
+			}
+
+			return networkDetails{
+				Name:       "ethereum",
+				ChainID:    1,
+				ChainIDHex: "0x1",
+				Currency:   "ETH",
+				Mainnet:    true,
+				RPC:        rpcList,
+			}
+		case "ethereum-sepolia", "sepolia", "testnet":
+			rpcList := []string{
+				"https://eth-sepolia.g.alchemy.com/v2/qj0W_YBDyo_a_qga3oPXf_iUWDrHRKWm",
+				"https://eth-sepolia.g.alchemy.com/v2/qj0W_YBDyo_a_qga3oPXf_iUWDrHRKWm",
+			}
+
+			return networkDetails{
+				Name:       "ethereum",
+				ChainID:    11155111,
+				ChainIDHex: "0xaa36a7",
+				Currency:   "ETH",
+				Mainnet:    false,
+				RPC:        rpcList,
+			}
+		case "polygon-mainnet":
+			rpcList := []string{
+				"wss://polygon-bor-rpc.publicnode.com",
+				"https://polygon.llamarpc.com",
+				"wss://polygon.drpc.org",
+			}
+
+			return networkDetails{
+				Name:       "polygon",
+				ChainID:    137,
+				ChainIDHex: "0x89",
+				Currency:   "matic",
+				Mainnet:    true,
+				RPC:        rpcList,
+			}
+		case "polygon-mumbai":
+			rpcList := []string{
+				"https://polygon-mumbai.gateway.tenderly.co",
+				"https://polygon-mumbai.api.onfinality.io/public",
+				"https://gateway.tenderly.co/public/polygon-mumbai",
+			}
+
+			return networkDetails{
+				Name:       "polygon",
+				ChainID:    80001,
+				ChainIDHex: "0x13881",
+				Currency:   "matic",
+				Mainnet:    false,
+				RPC:        rpcList,
+			}
+		case "gnosis-mainnet":
+			rpcList := []string{
+				"https://rpc.gnosischain.com",
+				"https://gnosis.drpc.org",
+			}
+
+			return networkDetails{
+				Name:       "gnosis",
+				ChainID:    100,
+				ChainIDHex: "0x64",
+				Currency:   "xDAI",
+				Mainnet:    true,
+				RPC:        rpcList,
+			}
+		case "gnosis-chiado":
+			rpcList := []string{
+				"https://rpc.chiadochain.net",
+				"https://gnosis-chiado-rpc.publicnode.com",
+			}
+
+			return networkDetails{
+				Name:       "gnosis",
+				ChainID:    10200,
+				ChainIDHex: "0x27d8",
+				Currency:   "xDAI",
+				Mainnet:    false,
+				RPC:        rpcList,
+			}
+	*/
+
+	default:
 		rpcList := []string{
-			"https://ethereum-sepolia-rpc.publicnode.com",
-			"https://rpc.sepolia.org",
+			"https://eth-sepolia.g.alchemy.com/v2/qj0W_YBDyo_a_qga3oPXf_iUWDrHRKWm",
+			"https://eth-sepolia.g.alchemy.com/v2/qj0W_YBDyo_a_qga3oPXf_iUWDrHRKWm",
 		}
 
 		return networkDetails{
@@ -1760,72 +2059,6 @@ func GetNetwork(network string) networkDetails {
 			Currency:   "ETH",
 			Mainnet:    false,
 			RPC:        rpcList,
-		}
-	case "polygon-mainnet":
-		rpcList := []string{
-			"wss://polygon-bor-rpc.publicnode.com",
-			"https://polygon.llamarpc.com",
-			"wss://polygon.drpc.org",
-		}
-
-		return networkDetails{
-			Name:       "polygon",
-			ChainID:    137,
-			ChainIDHex: "0x89",
-			Currency:   "matic",
-			Mainnet:    true,
-			RPC:        rpcList,
-		}
-	case "polygon-mumbai":
-		rpcList := []string{
-			"https://polygon-mumbai.gateway.tenderly.co",
-			"https://polygon-mumbai.api.onfinality.io/public",
-			"https://gateway.tenderly.co/public/polygon-mumbai",
-		}
-
-		return networkDetails{
-			Name:       "polygon",
-			ChainID:    80001,
-			ChainIDHex: "0x13881",
-			Currency:   "matic",
-			Mainnet:    false,
-			RPC:        rpcList,
-		}
-	case "gnosis-mainnet":
-		rpcList := []string{
-			"https://rpc.gnosischain.com",
-			"https://gnosis.drpc.org",
-		}
-
-		return networkDetails{
-			Name:       "gnosis",
-			ChainID:    100,
-			ChainIDHex: "0x64",
-			Currency:   "xDAI",
-			Mainnet:    true,
-			RPC:        rpcList,
-		}
-	case "gnosis-chiado":
-		rpcList := []string{
-			"https://rpc.chiadochain.net",
-			"https://gnosis-chiado-rpc.publicnode.com",
-		}
-
-		return networkDetails{
-			Name:       "gnosis",
-			ChainID:    10200,
-			ChainIDHex: "0x27d8",
-			Currency:   "xDAI",
-			Mainnet:    false,
-			RPC:        rpcList,
-		}
-
-	default:
-		return networkDetails{
-			Name:     "",
-			ChainID:  0,
-			Currency: "",
-			Mainnet:  false,
 		}
 	}
 }

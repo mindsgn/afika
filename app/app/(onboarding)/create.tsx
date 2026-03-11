@@ -57,6 +57,7 @@ export default function PinScreen() {
     return (
       <Pressable
         key={label}
+        testID={`create-pin-key-${label}`}
         onPress={onPress}
         style={({ pressed }) => [
           styles.key,
@@ -69,7 +70,7 @@ export default function PinScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID="create-pin-screen">
       <View style={styles.numberContainer}>
         <Text style={styles.title}>Create New PIN</Text>
           <View style={styles.dotsRow}>
@@ -89,6 +90,7 @@ export default function PinScreen() {
         {renderButton('0', () => onPressNumber('0'))}
 
         <Pressable
+          testID="create-pin-delete"
           onPress={onDelete}
           style={({ pressed }) => [
             styles.key,

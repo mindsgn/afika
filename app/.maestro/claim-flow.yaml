@@ -1,0 +1,18 @@
+appId: mindsgn.studio.pockt
+---
+- launchApp
+- tapOn: "Claim"
+- assertVisible:
+    id: "claim-screen"
+- tapOn:
+    id: "claim-email-input"
+- inputText: "tester@example.com"
+- tapOn:
+    id: "claim-submit-button"
+- tapOn:
+    id: "pin-auth-input"
+- inputText: "12345"
+- tapOn:
+    id: "pin-auth-confirm"
+- assertVisible:
+    id: "claim-status"

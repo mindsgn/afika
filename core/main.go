@@ -17,13 +17,12 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/mindsgn-studio/pocket-money-app/core/internal/config"
 	"github.com/mindsgn-studio/pocket-money-app/core/internal/database"
 	"github.com/mindsgn-studio/pocket-money-app/core/internal/ethereum"
 )
 
 var ErrNotInitialized = errors.New("wallet core is not initialized")
+var ErrSmartAccountsDisabled = errors.New("smart account features are disabled in MVP v1")
 
 type TransactionType string
 
@@ -180,12 +179,6 @@ func NewWalletCore() *WalletCore {
 }
 
 func (w *WalletCore) Init(dataDir, password, masterKeyB64, kdfSaltB64 string) error {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("EXPO_PUBLIC_POCKET_APP_ENV")), "production") {
-		if _, err := config.ValidateAAConfig("ethereum-mainnet", true); err != nil {
-			return err
-		}
-	}
-
 	masterKey, err := base64.StdEncoding.DecodeString(masterKeyB64)
 	if err != nil {
 		return err
@@ -373,140 +366,19 @@ func (w *WalletCore) GetAccountSnapshot(network string) (string, error) {
 }
 
 func (w *WalletCore) GetAAReadiness(network string) (string, error) {
-	db, err := w.getDB()
-	if err != nil {
-		return "", err
-	}
-
-	resolvedNetwork := resolveAppNetwork(network)
-	deployment, err := config.GetDeployment(resolvedNetwork)
-	if err != nil {
-		return "", err
-	}
-
-	ownerAddress := ""
-	if wallets, err := db.ListWallets(context.Background()); err == nil && len(wallets) > 0 {
-		ownerAddress = wallets[0].Address
-	}
-
-	accountAddress := ""
-	smartReady := false
-	if ownerAddress != "" {
-		if _, account, err := ethereum.GetSmartAccount(context.Background(), db, resolvedNetwork); err == nil && strings.TrimSpace(account) != "" {
-			accountAddress = account
-			smartReady = true
-		}
-	}
-
-	entryPointConfigured := strings.TrimSpace(deployment.EntryPointAddress) != ""
-	bundlerConfigured := strings.TrimSpace(deployment.BundlerURL) != ""
-	paymasterConfigured := strings.TrimSpace(deployment.PaymasterAddress) != ""
-
-	readiness := AAReadiness{
-		Network:              resolvedNetwork,
-		OwnerAddress:         ownerAddress,
-		AccountAddress:       accountAddress,
-		SmartAccountReady:    smartReady,
-		EntryPointConfigured: entryPointConfigured,
-		BundlerConfigured:    bundlerConfigured,
-		PaymasterConfigured:  paymasterConfigured,
-		SponsorshipReady:     entryPointConfigured && bundlerConfigured && paymasterConfigured,
-	}
-
-	encoded, err := json.Marshal(readiness)
-	if err != nil {
-		return "", err
-	}
-
-	return string(encoded), nil
+	return "", ErrSmartAccountsDisabled
 }
 
 func (w *WalletCore) CreateSmartContractAccount(network string) (string, error) {
-	db, err := w.getDB()
-	if err != nil {
-		return "", err
-	}
-
-	resolvedNetwork := resolveAppNetwork(network)
-	ownerAddress, accountAddress, err := ethereum.CreateOrGetSmartAccount(context.Background(), db, resolvedNetwork)
-	if err != nil {
-		return "", err
-	}
-
-	payload := map[string]string{
-		"ownerAddress":   ownerAddress,
-		"accountAddress": accountAddress,
-		"network":        resolvedNetwork,
-	}
-
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-
-	return string(encoded), nil
+	return "", ErrSmartAccountsDisabled
 }
 
 func (w *WalletCore) GetSmartAccountCreationReadiness(network string) (string, error) {
-	db, err := w.getDB()
-	if err != nil {
-		return "", err
-	}
-
-	resolvedNetwork := resolveAppNetwork(network)
-	readiness, err := ethereum.CheckSmartAccountCreationReadiness(context.Background(), db, resolvedNetwork)
-	if err != nil {
-		return "", err
-	}
-
-	payload := SmartAccountCreationReadiness{
-		Network:                   readiness.Network,
-		OwnerAddress:              readiness.OwnerAddress,
-		FactoryAddress:            readiness.FactoryAddress,
-		EntryPointAddress:         readiness.EntryPointAddress,
-		SmartAccountAddress:       readiness.SmartAccountAddress,
-		SmartAccountExists:        readiness.SmartAccountExists,
-		OwnerBalanceWei:           readiness.OwnerBalanceWei,
-		OwnerRequiredMinGasWei:    readiness.OwnerRequiredMinGasWei,
-		HasSufficientOwnerBalance: readiness.HasSufficientOwnerBalance,
-		CanUseSponsoredCreate:     readiness.CanUseSponsoredCreate,
-		IsReady:                   readiness.IsReady,
-		FailureReasons:            readiness.FailureReasons,
-		Warnings:                  readiness.Warnings,
-	}
-
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-
-	return string(encoded), nil
+	return "", ErrSmartAccountsDisabled
 }
 
 func (w *WalletCore) GetSmartContractAccount(network string) (string, error) {
-	db, err := w.getDB()
-	if err != nil {
-		return "", err
-	}
-
-	resolvedNetwork := resolveAppNetwork(network)
-	ownerAddress, accountAddress, err := ethereum.GetSmartAccount(context.Background(), db, resolvedNetwork)
-	if err != nil {
-		return "", err
-	}
-
-	payload := map[string]string{
-		"ownerAddress":   ownerAddress,
-		"accountAddress": accountAddress,
-		"network":        resolvedNetwork,
-	}
-
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-
-	return string(encoded), nil
+	return "", ErrSmartAccountsDisabled
 }
 
 func (w *WalletCore) SendMoneyTo(network string, destination string, amount string) (string, error) {
@@ -526,7 +398,7 @@ func (w *WalletCore) SendUsdcWithMode(network string, destination string, amount
 }
 
 func (w *WalletCore) SendToken(network string, tokenIdentifier string, destination string, amount string, note string, providerID string) (string, error) {
-	resultJSON, err := w.SendTokenWithMode(network, tokenIdentifier, destination, amount, note, providerID, ethereum.SendModeSponsored)
+	resultJSON, err := w.SendTokenWithMode(network, tokenIdentifier, destination, amount, note, providerID, ethereum.SendModeDirect)
 	if err != nil {
 		return "", err
 	}
@@ -547,6 +419,10 @@ func (w *WalletCore) SendTokenWithMode(network string, tokenIdentifier string, d
 	db, err := w.getDB()
 	if err != nil {
 		return "", err
+	}
+
+	if ethereum.ResolveSendMode(sendMode) == ethereum.SendModeSponsored {
+		return "", ErrSmartAccountsDisabled
 	}
 
 	result, err := ethereum.SendTokenWithMode(context.Background(), db, resolveAppNetwork(network), tokenIdentifier, destination, amount, note, providerID, sendMode)
@@ -573,65 +449,42 @@ func (w *WalletCore) SendTokenWithMode(network string, tokenIdentifier string, d
 }
 
 func (w *WalletCore) SignUserOperationPayload(network string, entryPointAddress string, userOperationJSON string) (string, error) {
+	return "", ErrSmartAccountsDisabled
+}
+
+func (w *WalletCore) SyncInboundTransactions(network string) (string, error) {
 	db, err := w.getDB()
 	if err != nil {
 		return "", err
 	}
 
-	var payload userOperationPayload
-	if err := json.Unmarshal([]byte(userOperationJSON), &payload); err != nil {
-		return "", err
-	}
-	if !common.IsHexAddress(strings.TrimSpace(payload.Sender)) {
-		return "", errors.New("invalid user operation sender")
-	}
-	if !common.IsHexAddress(strings.TrimSpace(entryPointAddress)) {
-		return "", errors.New("invalid entry point address")
-	}
-
-	op, err := parseUserOperationPayload(payload)
+	wallets, err := db.ListWallets(context.Background())
 	if err != nil {
 		return "", err
 	}
 
-	walletSecrets, err := db.ListWalletSecrets(context.Background())
-	if err != nil {
-		return "", err
-	}
-	if len(walletSecrets) == 0 {
-		return "", errors.New("no wallet found")
-	}
-
-	privateKey, err := crypto.ToECDSA(walletSecrets[0].PrivateKey)
-	if err != nil {
-		return "", err
+	if len(wallets) == 0 {
+		encoded, _ := json.Marshal(map[string]any{"synced": 0})
+		return string(encoded), nil
 	}
 
 	resolvedNetwork := resolveAppNetwork(network)
-	networkConfig := ethereum.GetNetwork(resolvedNetwork)
-	if networkConfig.ChainID == 0 {
-		return "", errors.New("unsupported network")
-	}
-
-	entryPoint := common.HexToAddress(strings.TrimSpace(entryPointAddress))
-	chainID := big.NewInt(int64(networkConfig.ChainID))
-	signature, userOpHash, err := ethereum.SignUserOperation(op, entryPoint, chainID, privateKey)
+	transfers, err := ethereum.FetchInboundTransfers(context.Background(), wallets[0].Address, resolvedNetwork)
 	if err != nil {
 		return "", err
 	}
 
-	payload.Signature = encodeHex(signature)
-
-	out := signUserOperationResponse{
-		UserOperation: payload,
-		UserOpHash:    userOpHash.Hex(),
+	synced := 0
+	for _, tx := range transfers {
+		if err := db.InsertTransactionIfMissing(context.Background(), tx); err == nil {
+			synced++
+		}
 	}
 
-	encoded, err := json.Marshal(out)
+	encoded, err := json.Marshal(map[string]any{"synced": synced})
 	if err != nil {
 		return "", err
 	}
-
 	return string(encoded), nil
 }
 

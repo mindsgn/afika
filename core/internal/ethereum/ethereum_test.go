@@ -5,7 +5,9 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/mindsgn-studio/pocket-money-app/core/internal/database"
 )
 
@@ -131,5 +133,139 @@ func TestGetTotalBalanceWithInjectedClients(t *testing.T) {
 	}
 	if result.TotalFiat <= 0 {
 		t.Fatalf("expected positive total fiat, got %f", result.TotalFiat)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// FetchInboundTransfers tests
+// ---------------------------------------------------------------------------
+
+// fakeInboundClient implements inboundTransferClient for tests.
+type fakeInboundClient struct {
+	blockNumber uint64
+	logs        []types.Log
+	filterErr   error
+	blockErr    error
+}
+
+func (f *fakeInboundClient) BlockNumber(_ context.Context) (uint64, error) {
+	return f.blockNumber, f.blockErr
+}
+func (f *fakeInboundClient) FilterLogs(_ context.Context, _ ethereum.FilterQuery) ([]types.Log, error) {
+	if f.filterErr != nil {
+		return nil, f.filterErr
+	}
+	return f.logs, nil
+}
+func (f *fakeInboundClient) Close() {}
+
+func TestFetchInboundTransfersEmptyAddress(t *testing.T) {
+	_, err := FetchInboundTransfers(context.Background(), "", "ethereum-sepolia")
+	if err == nil {
+		t.Fatal("expected error for empty wallet address")
+	}
+}
+
+func TestFetchInboundTransfersInvalidAddress(t *testing.T) {
+	_, err := FetchInboundTransfers(context.Background(), "not-an-address", "ethereum-sepolia")
+	if err == nil {
+		t.Fatal("expected error for invalid wallet address")
+	}
+}
+
+func TestFetchInboundTransfersUnsupportedNetwork(t *testing.T) {
+	_, err := FetchInboundTransfers(context.Background(), "0x0000000000000000000000000000000000000001", "unknown-chain")
+	if err == nil {
+		t.Fatal("expected error for unsupported network")
+	}
+}
+
+func TestFetchInboundTransfersNoLogs(t *testing.T) {
+	prev := dialInboundClient
+	dialInboundClient = func(_ context.Context, _ string) (inboundTransferClient, error) {
+		return &fakeInboundClient{blockNumber: 1000}, nil
+	}
+	defer func() { dialInboundClient = prev }()
+
+	results, err := FetchInboundTransfers(context.Background(), "0x0000000000000000000000000000000000000001", "ethereum-sepolia")
+	if err != nil {
+		t.Fatalf("FetchInboundTransfers() error = %v", err)
+	}
+	// No logs returned by the fake client, so results must be empty (ETH alchemy path also silently returns nil).
+	if len(results) != 0 {
+		t.Fatalf("expected 0 results, got %d", len(results))
+	}
+}
+
+func TestFetchInboundTransfersERC20Log(t *testing.T) {
+	walletAddr := "0xaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaA"
+	fromAddr := common.HexToAddress("0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
+	toAddr := common.HexToAddress(walletAddr)
+
+	// Build a fake Transfer log: amount = 5_000_000 (5 USDC, 6 decimals)
+	amount := new(big.Int).SetUint64(5_000_000)
+	paddedAmount := make([]byte, 32)
+	amount.FillBytes(paddedAmount)
+
+	fakeLog := types.Log{
+		TxHash: common.HexToHash("0xdeadbeef"),
+		Topics: []common.Hash{
+			common.HexToHash(erc20TransferTopic),
+			common.BytesToHash(fromAddr.Bytes()),
+			common.BytesToHash(toAddr.Bytes()),
+		},
+		Data: paddedAmount,
+	}
+
+	prev := dialInboundClient
+	dialInboundClient = func(_ context.Context, _ string) (inboundTransferClient, error) {
+		return &fakeInboundClient{blockNumber: 500, logs: []types.Log{fakeLog}}, nil
+	}
+	defer func() { dialInboundClient = prev }()
+
+	results, err := FetchInboundTransfers(context.Background(), walletAddr, "ethereum-sepolia")
+	if err != nil {
+		t.Fatalf("FetchInboundTransfers() error = %v", err)
+	}
+
+	// Should find exactly one USDC credit record.
+	var found *database.TransactionRecord
+	for i := range results {
+		if results[i].TransactionType == "credit" && results[i].Token == "USDC" {
+			found = &results[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("expected a credit USDC record in results")
+	}
+	if found.Amount != "5" {
+		t.Fatalf("expected amount '5', got %q", found.Amount)
+	}
+	if found.TxHash != common.HexToHash("0xdeadbeef").Hex() {
+		t.Fatalf("unexpected tx hash: %s", found.TxHash)
+	}
+	if found.TxMode != "external" {
+		t.Fatalf("expected TxMode 'external', got %q", found.TxMode)
+	}
+	if found.State != "completed" {
+		t.Fatalf("expected State 'completed', got %q", found.State)
+	}
+}
+
+func TestFetchInboundTransfersFilterLogErrorIsSilent(t *testing.T) {
+	prev := dialInboundClient
+	dialInboundClient = func(_ context.Context, _ string) (inboundTransferClient, error) {
+		return &fakeInboundClient{blockNumber: 1000, filterErr: ethereum.NotFound}, nil
+	}
+	defer func() { dialInboundClient = prev }()
+
+	// Filter error must not propagate; we get an empty result instead.
+	results, err := FetchInboundTransfers(context.Background(), "0x0000000000000000000000000000000000000001", "ethereum-sepolia")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected 0 results on filter error, got %d", len(results))
 	}
 }

@@ -1,9 +1,20 @@
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { useRouter } from 'expo-router';
+import { BodyText, PrimaryButton, Screen, Title } from '@/@src/components/Primitives';
 
 export default function Settings() {
+  const router = useRouter();
+
   return (
-    <View>
-    </View>
+    <Screen testID="settings-screen" style={styles.container}>
+      <Title>Settings</Title>
+      <BodyText>Security and app options will continue to expand during MVP.</BodyText>
+      <PrimaryButton
+        testID="open-claim-button"
+        label="Open Claim Screen"
+        onPress={() => router.push('/(home)/claim')}
+      />
+    </Screen>
   );
 }
 

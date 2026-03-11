@@ -11,11 +11,6 @@ declare class PocketModule extends NativeModule implements PocketApi {
   getBalance(network: PocketNetwork): Promise<string>;
   getAccountSummary(network: string): Promise<string>;
   getAccountSnapshot(network: PocketNetwork): Promise<string>;
-  getAAReadiness(network: PocketNetwork): Promise<string>;
-  getSmartAccountCreationReadiness(network: PocketNetwork): Promise<string>;
-  signUserOperationPayload(network: PocketNetwork, entryPointAddress: string, userOperationJSON: string): Promise<string>;
-  createSmartContractAccount(network: PocketNetwork): Promise<string>;
-  getSmartContractAccount(network: PocketNetwork): Promise<string>;
   listAccounts(): Promise<string>;
   sendUsdc(network: string, destination: string, amount: string, note: string, providerID: string): Promise<string>;
   sendUsdcWithMode(network: string, destination: string, amount: string, note: string, providerID: string, sendMode: SendMode): Promise<string>;
@@ -26,6 +21,8 @@ declare class PocketModule extends NativeModule implements PocketApi {
   listAllTransactions(network: PocketNetwork, limit: number, offset: number): Promise<string>;
   exportBackup(passphrase: string): Promise<string>;
   importBackup(payload: string, passphrase: string): Promise<string>;
+  sendMoneyTo(network: PocketNetwork, destination: string, amount: string): Promise<string>;
+  syncInboundTransactions(network: PocketNetwork): Promise<string>;
 }
 
 // This call loads the native module object from the JSI.

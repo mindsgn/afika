@@ -11,6 +11,7 @@ type TxItem = {
   token: string;
   amount: string;
   state: string;
+  type?: string;
   mode?: string;
   sponsorshipMode?: string;
   bundlerStatus?: string;
@@ -28,6 +29,13 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState<number>(0)
 
   const refreshData = useCallback(async () => {
+    // Sync inbound transfers first so they appear in the list below.
+    // Non-fatal: a sync failure must not block reading the local DB.
+    try {
+      await PocketCore.syncInboundTransactions(DEFAULT_NETWORK)
+    } catch {
+      // intentionally ignored
+    }
     const tx = await PocketCore.listAllTransactions(DEFAULT_NETWORK, 20, 0)
     const parsed = JSON.parse(tx) as TxItem[]
     setTransactions(Array.isArray(parsed) ? parsed : [])
@@ -63,7 +71,6 @@ export default function App() {
       try {
         await PocketCore.initWalletSecure(dataDir.uri, password)
         const address = await PocketCore.openOrCreateWallet('Main Wallet')
-        await PocketCore.createSmartContractAccount(DEFAULT_NETWORK)
         setWalletAddress(address)
         await refreshData()
         setStatus('Wallet ready')
@@ -83,21 +90,21 @@ export default function App() {
   }, [refreshData])
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={styles.container} testID="transactions-screen">
       <Text style={styles.title}>Transactions</Text>
       <Text style={styles.label}>Wallet ({DEFAULT_NETWORK})</Text>
       <Text style={styles.value}>{walletAddress || 'Not ready'}</Text>
       <Text style={styles.value}>Last updated: {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : 'n/a'}</Text>
 
-      <Pressable style={styles.refresh} onPress={() => refreshData().catch((error) => setStatus(`Refresh failed: ${String(error)}`))}>
+      <Pressable testID="transactions-refresh" style={styles.refresh} onPress={() => refreshData().catch((error) => setStatus(`Refresh failed: ${String(error)}`))}>
         <Text style={styles.refreshText}>Refresh</Text>
       </Pressable>
 
       <Text style={styles.section}>Latest Activity</Text>
       {transactions.length === 0 ? <Text style={styles.value}>No transactions yet</Text> : null}
       {transactions.map((item, index) => (
-        <View key={`${item.hash}-${index}`} style={styles.card}>
-          <Text style={styles.row}>Token: {item.token} {item.amount}</Text>
+        <View key={`${item.hash}-${index}`} style={styles.card} testID={`tx-item-${index}`}>
+          <Text style={[styles.row, styles.direction]}>{item.type === 'credit' ? '↓ Received' : '↑ Sent'} {item.token} {item.amount}</Text>
           <Text style={styles.row}>Lifecycle: {formatLifecycle(item)}</Text>
           <Text style={styles.row}>State: {item.state}</Text>
           <Text style={styles.row}>Flow: {item.mode || 'direct'} / {item.sponsorshipMode || 'direct'}</Text>
@@ -109,7 +116,7 @@ export default function App() {
         </View>
       ))}
 
-      <Text style={styles.status}>{status}</Text>
+      <Text style={styles.status} testID="transactions-status">{status}</Text>
     </ScrollView>
   );
 }
@@ -157,6 +164,9 @@ const styles = StyleSheet.create({
   },
   row: {
     fontSize: 12
+  },
+  direction: {
+    fontWeight: '600',
   },
   hint: {
     fontSize: 11,

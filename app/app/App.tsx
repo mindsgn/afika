@@ -7,7 +7,6 @@ const DEFAULT_NETWORK: 'ethereum-mainnet' | 'ethereum-sepolia' = process.env.EXP
 
 export default function App() {
   const [walletAddress, setWalletAddress] = useState('')
-  const [smartAccountAddress, setSmartAccountAddress] = useState('')
   const [summary, setSummary] = useState('')
   const [transactions, setTransactions] = useState('[]')
   const [backupPayload, setBackupPayload] = useState('')
@@ -19,16 +18,10 @@ export default function App() {
   const [note, setNote] = useState('')
   const [providerID, setProviderID] = useState('')
   const [status, setStatus] = useState('Initializing...')
-  const [aaReadiness, setAAReadiness] = useState('')
 
   const refreshData = useCallback(async () => {
     const accountSummary = await PocketCore.getAccountSnapshot(DEFAULT_NETWORK)
     setSummary(accountSummary)
-    const snapshot = JSON.parse(accountSummary)
-    setSmartAccountAddress(snapshot.accountAddress || '')
-
-    const readiness = await PocketCore.getAAReadiness(DEFAULT_NETWORK)
-    setAAReadiness(readiness)
 
     const tx = await PocketCore.listAllTransactions(DEFAULT_NETWORK, 20, 0)
     setTransactions(tx)
@@ -43,7 +36,6 @@ export default function App() {
         await PocketCore.initWalletSecure(dataDir.uri, password)
         const address = await PocketCore.openOrCreateWallet('Main Wallet')
         setWalletAddress(address)
-        await PocketCore.createSmartContractAccount(DEFAULT_NETWORK)
         await refreshData()
         setStatus('Wallet ready')
       } catch (error) {
@@ -90,12 +82,6 @@ export default function App() {
       <Text style={styles.title}>Pocket Money</Text>
       <Text style={styles.label}>Wallet</Text>
       <Text style={styles.value}>{walletAddress || 'Not ready'}</Text>
-
-      <Text style={styles.label}>Smart Account</Text>
-      <Text style={styles.value}>{smartAccountAddress || 'Not created yet'}</Text>
-
-      <Text style={styles.label}>AA Readiness</Text>
-      <Text style={styles.value}>{aaReadiness || '{}'}</Text>
 
       <Text style={styles.label}>Account Snapshot ({DEFAULT_NETWORK})</Text>
       <Text style={styles.value}>{summary || '{}'}</Text>

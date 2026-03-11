@@ -11,8 +11,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { useRouter } from 'expo-router';
 import PocketCore from "@/modules/pocket-module";
 import { Directory, Paths } from 'expo-file-system';
-import useWallet, { AAReadiness, SmartAccountCreationReadiness, WalletTransaction } from '@/@src/store/wallet';
-import { pocketBackend } from '@/@src/lib/api/pocketBackend';
+import useWallet, { WalletTransaction } from '@/@src/store/wallet';
 
 const PIN_LENGTH = 5;
 const DEFAULT_NETWORK = 'ethereum-sepolia' // 'ethereum-mainnet' //  | 'ethereum-sepolia' = process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 'ethereum-mainnet' : 'ethereum-sepolia';
@@ -20,11 +19,9 @@ const DEFAULT_NETWORK = 'ethereum-sepolia' // 'ethereum-mainnet' //  | 'ethereum
 export default function PinScreen() {
   const {
     setWalletAddress,
-    setSmartAccountAddress,
     setBalancesJson,
     setTransactions,
-    setAAReadiness,
-    setCreationReadiness,
+    clearWalletState,
   } = useWallet();
   const router = useRouter();
   const { pin } = useLocalSearchParams<{
@@ -33,22 +30,6 @@ export default function PinScreen() {
 
   const [confirmationPin, setConfirmationPin] = useState<string[]>([]);
   const [status, setStatus] = useState('');
-
-  const formatWeiHint = (wei: string) => {
-    const clean = (wei || '').trim();
-    if (!clean) return '';
-    if (clean.length <= 18) return `~0.${clean.padStart(18, '0').slice(0, 4)} ETH`;
-    const whole = clean.slice(0, clean.length - 18);
-    const fraction = clean.slice(clean.length - 18, clean.length - 14);
-    return `~${whole}.${fraction} ETH`;
-  };
-
-  const preflightMessage = (readiness: SmartAccountCreationReadiness) => {
-    const reasons = readiness.failureReasons?.join(', ') || 'unknown';
-    const minWei = readiness.ownerRequiredMinGasWei || '0';
-    const ethHint = formatWeiHint(minWei);
-    return `Cannot create wallet yet. Reasons: ${reasons}. Sponsored creation must be enabled and available.`;
-  };
 
   const onPressNumber = async (value: string) => {
     if (confirmationPin.length >= PIN_LENGTH) return;
@@ -72,61 +53,18 @@ export default function PinScreen() {
       const walletAddress = await PocketCore.openOrCreateWallet('Main Wallet');
       setWalletAddress(walletAddress);
 
-      if (!pocketBackend.isConfigured()) {
-        throw new Error('Backend configuration (EXPO_PUBLIC_POCKET_BACKEND_BASE_URL) is required');
-      }
-
-      setStatus('Preparing owner for smart-account creation...');
-      const prepare = await pocketBackend.prepareOwner(DEFAULT_NETWORK, walletAddress);
-      console.log(prepare);
-
-      if (prepare.status === 'funded') {
-        const hint = formatWeiHint(prepare.requiredMinGasWei || '0');
-        setStatus(`Owner funded for account creation (${hint}). Deploying smart account...`);
-      } else {
-        setStatus('Owner already funded. Deploying smart account...');
-      }
-
-      const creationRaw = await PocketCore.getSmartAccountCreationReadiness(DEFAULT_NETWORK);
-      console.log("Creation readiness", creationRaw);
-      const creationReadiness = JSON.parse(creationRaw) as SmartAccountCreationReadiness;
-      setCreationReadiness(creationReadiness);
-      if (!creationReadiness.isReady && !creationReadiness.smartAccountExists) {
-        throw new Error(preflightMessage(creationReadiness));
-      }
-
-      setStatus('Creating smart account...');
-      const smartAccountAddress = await PocketCore.createSmartContractAccount(DEFAULT_NETWORK);
-      setSmartAccountAddress(smartAccountAddress);
-
-      const refreshedCreationRaw = await PocketCore.getSmartAccountCreationReadiness(DEFAULT_NETWORK);
-      const refreshedCreationReadiness = JSON.parse(refreshedCreationRaw) as SmartAccountCreationReadiness;
-      setCreationReadiness(refreshedCreationReadiness);
-
-      const readinessRaw = await PocketCore.getAAReadiness(DEFAULT_NETWORK);
-      const readiness = JSON.parse(readinessRaw) as AAReadiness;
-      setAAReadiness(readiness);
-      if (!readiness.smartAccountReady) {
-        throw new Error('Smart account is not ready yet. Please retry onboarding.');
-      }
-
-      const accountSummary = await PocketCore.getAccountSnapshot(DEFAULT_NETWORK);
-      setBalancesJson(accountSummary);
-
-      const txResponse = await PocketCore.listAllTransactions(DEFAULT_NETWORK, 100, 0);
-      const transactions = JSON.parse(txResponse) as WalletTransaction[];
-      setTransactions(Array.isArray(transactions) ? transactions : []);
+      const txResponse = await PocketCore.getBalance(DEFAULT_NETWORK);
+      console.log(txResponse)
+      //const transactions = JSON.parse(txResponse) as WalletTransaction[];
+      // setTransactions(Array.isArray(transactions) ? transactions : []);
 
       await SecureStore.setItemAsync("onboarded", "true");
       await SecureStore.setItemAsync("password", password);
 
-      if (!readiness.sponsorshipReady) {
-        setStatus('Wallet ready. Sponsored mode unavailable until bundler/paymaster config is set.');
-      }
-      
       router.replace("/(home)")
 
     } catch (error) {
+      clearWalletState();
       router.replace({
         pathname: "/error",
         params: {
@@ -166,6 +104,7 @@ export default function PinScreen() {
     return (
       <Pressable
         key={label}
+        testID={`confirm-pin-key-${label}`}
         onPress={onPress}
         style={({ pressed }) => [
           styles.key,
@@ -178,7 +117,7 @@ export default function PinScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID="confirm-pin-screen">
       <View style={styles.numberContainer}>
         <Text style={styles.title}>Confirm New PIN</Text>
           <View style={styles.dotsRow}>
@@ -198,6 +137,7 @@ export default function PinScreen() {
         {renderButton('0', () => onPressNumber('0'))}
 
         <Pressable
+          testID="confirm-pin-delete"
           onPress={onDelete}
           style={({ pressed }) => [
             styles.key,
@@ -208,7 +148,7 @@ export default function PinScreen() {
         </Pressable>
       </View>
 
-      {status ? <Text style={styles.status}>{status}</Text> : null}
+      {status ? <Text testID="confirm-status" style={styles.status}>{status}</Text> : null}
     </View>
   );
 }

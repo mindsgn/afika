@@ -72,7 +72,7 @@ func TestWalletCoreSendMoneyStub(t *testing.T) {
 	}
 }
 
-func TestWalletCoreGetAAReadiness(t *testing.T) {
+func TestWalletCoreGetAAReadinessDisabledInMVP(t *testing.T) {
 	wallet := NewWalletCore()
 	masterKey, salt := testKeyMaterial()
 	if err := wallet.Init(t.TempDir(), "password", masterKey, salt); err != nil {
@@ -80,31 +80,57 @@ func TestWalletCoreGetAAReadiness(t *testing.T) {
 	}
 	defer wallet.Close()
 
-	t.Setenv("EXPO_PUBLIC_POCKET_BUNDLER_URL_ETHEREUM_SEPOLIA", "https://bundler.example")
+	_, err := wallet.GetAAReadiness("sepolia")
+	if !errors.Is(err, ErrSmartAccountsDisabled) {
+		t.Fatalf("expected ErrSmartAccountsDisabled, got %v", err)
+	}
+}
 
-	raw, err := wallet.GetAAReadiness("sepolia")
+func TestSyncInboundTransactionsRequiresInit(t *testing.T) {
+	wallet := NewWalletCore()
+	_, err := wallet.SyncInboundTransactions("ethereum-sepolia")
+	if !errors.Is(err, ErrNotInitialized) {
+		t.Fatalf("expected ErrNotInitialized, got %v", err)
+	}
+}
+
+func TestSyncInboundTransactionsNoWalletReturnsZero(t *testing.T) {
+	wallet := NewWalletCore()
+	masterKey, salt := testKeyMaterial()
+	if err := wallet.Init(t.TempDir(), "password", masterKey, salt); err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+	defer wallet.Close()
+
+	// No wallet created, so the function should return {"synced":0} without error.
+	result, err := wallet.SyncInboundTransactions("ethereum-sepolia")
 	if err != nil {
-		t.Fatalf("GetAAReadiness() error = %v", err)
+		t.Fatalf("SyncInboundTransactions() unexpected error = %v", err)
 	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(result), &out); err != nil {
+		t.Fatalf("JSON unmarshal error = %v", err)
+	}
+	synced, ok := out["synced"]
+	if !ok {
+		t.Fatal("expected 'synced' key in result")
+	}
+	// JSON numbers decode to float64.
+	if synced.(float64) != 0 {
+		t.Fatalf("expected synced=0, got %v", synced)
+	}
+}
 
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		t.Fatalf("readiness JSON unmarshal error = %v", err)
+func TestSyncInboundTransactionsSendMoneyToStillReturnsError(t *testing.T) {
+	wallet := NewWalletCore()
+	masterKey, salt := testKeyMaterial()
+	if err := wallet.Init(t.TempDir(), "password", masterKey, salt); err != nil {
+		t.Fatalf("Init() error = %v", err)
 	}
+	defer wallet.Close()
 
-	if payload["network"] != "ethereum-sepolia" {
-		t.Fatalf("unexpected network: %v", payload["network"])
-	}
-	if payload["entryPointConfigured"] != true {
-		t.Fatalf("expected entryPointConfigured=true, got %v", payload["entryPointConfigured"])
-	}
-	if payload["bundlerConfigured"] != true {
-		t.Fatalf("expected bundlerConfigured=true, got %v", payload["bundlerConfigured"])
-	}
-	if payload["paymasterConfigured"] != true {
-		t.Fatalf("expected paymasterConfigured=true, got %v", payload["paymasterConfigured"])
-	}
-	if payload["sponsorshipReady"] != true {
-		t.Fatalf("expected sponsorshipReady=true, got %v", payload["sponsorshipReady"])
+	_, err := wallet.SendMoneyTo("ethereum-sepolia", "0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "1")
+	if err == nil {
+		t.Fatal("expected SendMoneyTo to return an error (stub not implemented)")
 	}
 }

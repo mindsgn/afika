@@ -10,7 +10,7 @@ import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
 import PocketCore from '@/modules/pocket-module';
 import { Directory, Paths } from 'expo-file-system';
-import useWallet, { AAReadiness, SmartAccountCreationReadiness, WalletTransaction } from '@/@src/store/wallet';
+import useWallet, { WalletTransaction } from '@/@src/store/wallet';
 
 const PIN_LENGTH = 5;
 const DEFAULT_NETWORK: 'ethereum-mainnet' | 'ethereum-sepolia' = process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 'ethereum-mainnet' : 'ethereum-sepolia';
@@ -18,31 +18,12 @@ const DEFAULT_NETWORK: 'ethereum-mainnet' | 'ethereum-sepolia' = process.env.EXP
 export default function PasswordScreen() {
   const {
     setWalletAddress,
-    setSmartAccountAddress,
-    setBalancesJson,
     setTransactions,
-    setAAReadiness,
-    setCreationReadiness,
     clearWalletState,
   } = useWallet();
   const [confirmationPin, setConfirmationPin] = useState<string[]>([]);
   const [status, setStatus] = useState('');
 
-  const formatWeiHint = (wei: string) => {
-    const clean = (wei || '').trim();
-    if (!clean) return '';
-    if (clean.length <= 18) return `~0.${clean.padStart(18, '0').slice(0, 4)} ETH`;
-    const whole = clean.slice(0, clean.length - 18);
-    const fraction = clean.slice(clean.length - 18, clean.length - 14);
-    return `~${whole}.${fraction} ETH`;
-  };
-
-  const preflightMessage = (readiness: SmartAccountCreationReadiness) => {
-    const reasons = readiness.failureReasons?.join(', ') || 'unknown';
-    const minWei = readiness.ownerRequiredMinGasWei || '0';
-    const ethHint = formatWeiHint(minWei);
-    return `Cannot create wallet yet. Reasons: ${reasons}. Fund your owner wallet with at least ${minWei} wei ${ethHint} or enable sponsored creation.`;
-  };
   const onPressNumber = async (value: string) => {
     if (confirmationPin.length >= PIN_LENGTH) return;
 
@@ -59,43 +40,35 @@ export default function PasswordScreen() {
 
   const getData = async(password: string) => {
     try{
-      const dataDir = new Directory(Paths.document);
       setStatus('Unlocking wallet...');
+      const dataDir = new Directory(Paths.document);
       await PocketCore.initWalletSecure(dataDir.uri, password)
       const walletAddress = await PocketCore.openOrCreateWallet('Main Wallet');
       setWalletAddress(walletAddress);
 
-      const creationRaw = await PocketCore.getSmartAccountCreationReadiness(DEFAULT_NETWORK);
-      const creationReadiness = JSON.parse(creationRaw) as SmartAccountCreationReadiness;
-      setCreationReadiness(creationReadiness);
-      if (!creationReadiness.isReady && !creationReadiness.smartAccountExists) {
-        throw new Error(preflightMessage(creationReadiness));
-      }
-
-      const accountRaw = await PocketCore.createSmartContractAccount(DEFAULT_NETWORK);
-      const accountPayload = JSON.parse(accountRaw) as { accountAddress?: string };
-      setSmartAccountAddress(accountPayload.accountAddress || '');
-
-      const refreshedCreationRaw = await PocketCore.getSmartAccountCreationReadiness(DEFAULT_NETWORK);
-      const refreshedCreationReadiness = JSON.parse(refreshedCreationRaw) as SmartAccountCreationReadiness;
-      setCreationReadiness(refreshedCreationReadiness);
-
-      const readinessRaw = await PocketCore.getAAReadiness(DEFAULT_NETWORK);
-      const readiness = JSON.parse(readinessRaw) as AAReadiness;
-      setAAReadiness(readiness);
-      
-      const accountSummary = await PocketCore.getAccountSnapshot(DEFAULT_NETWORK);
-      setBalancesJson(accountSummary);
-
-      const txResponse = await PocketCore.listAllTransactions(DEFAULT_NETWORK, 20, 0);
-      const transactions = JSON.parse(txResponse) as WalletTransaction[];
+      await PocketCore.syncInboundTransactions(DEFAULT_NETWORK);
+      const txTransacttionResponse = await PocketCore.listAllTransactions(DEFAULT_NETWORK, 100, 0);
+      const transactions = JSON.parse(txTransacttionResponse) as WalletTransaction[];
       setTransactions(Array.isArray(transactions) ? transactions : []);
+      // console.log('Transactions:', txTransacttionResponse);
 
-      if (!readiness.sponsorshipReady) {
-        setStatus('Unlocked. Sponsored mode is currently unavailable.');
-      }
+      // const txResponse = await PocketCore.getBalance(DEFAULT_NETWORK);
+      // console.log("Balance: " ,txResponse)
 
-      router.replace("/(home)");
+      //const transactions = JSON.parse(txResponse) as WalletTransaction[];
+      //console.log('Transactions:', transactions);
+
+
+      //setTransactions(Array.isArray(transactions) ? transactions : []);
+      
+      
+      router.replace({
+        pathname: "/(home)",
+        params: {
+          password: confirmationPin.join('')
+        }
+      });
+      
     } catch(error) {
       clearWalletState();
       router.replace({
@@ -138,6 +111,7 @@ export default function PasswordScreen() {
     return (
       <Pressable
         key={label}
+        testID={`unlock-pin-key-${label}`}
         onPress={onPress}
         style={({ pressed }) => [
           styles.key,
@@ -150,7 +124,7 @@ export default function PasswordScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID="unlock-screen">
       <View style={styles.numberContainer}>
         <Text style={styles.title}>Enter PIN</Text>
           <View style={styles.dotsRow}>
@@ -170,6 +144,7 @@ export default function PasswordScreen() {
         {renderButton('0', () => onPressNumber('0'))}
 
         <Pressable
+          testID="unlock-pin-delete"
           onPress={onDelete}
           style={({ pressed }) => [
             styles.key,
@@ -180,7 +155,7 @@ export default function PasswordScreen() {
         </Pressable>
       </View>
 
-      {status ? <Text style={styles.status}>{status}</Text> : null}
+      {status ? <Text testID="unlock-status" style={styles.status}>{status}</Text> : null}
     </View>
   );
 }

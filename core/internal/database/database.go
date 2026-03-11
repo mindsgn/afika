@@ -114,6 +114,43 @@ type PaymasterValidation struct {
 	CreatedAt       int64
 }
 
+type User struct {
+	UUID      string
+	Email     string
+	Address   string
+	CreatedAt int64
+}
+
+type EmailTransfer struct {
+	UUID          string
+	FromEmail     string
+	ToEmail       string
+	AmountUSDC    string
+	Status        string
+	OnchainTxHash string
+	CreatedAt     int64
+	UpdatedAt     int64
+}
+
+type AddressEvent struct {
+	UUID      string
+	Address   string
+	Chain     string
+	Token     string
+	Amount    string
+	TxHash    string
+	Direction string
+	Timestamp int64
+	CreatedAt int64
+}
+
+type FXRate struct {
+	UUID      string
+	Pair      string
+	Rate      string
+	FetchedAt int64
+}
+
 type DB struct {
 	db *sql.DB
 }
@@ -513,6 +550,164 @@ func (d *DB) InsertTransactionIfMissing(ctx context.Context, tx TransactionRecor
 		return nil
 	}
 	return err
+}
+
+func (d *DB) InsertUserIfMissing(ctx context.Context, email, address string) error {
+	if d == nil || d.db == nil {
+		return errors.New("database is not initialized")
+	}
+	email = strings.TrimSpace(email)
+	address = strings.TrimSpace(address)
+	if email == "" || address == "" {
+		return errors.New("email and address are required")
+	}
+
+	const q = `
+	INSERT INTO users (uuid, email, address, created_at)
+	VALUES (?, ?, ?, ?);
+	`
+	now := time.Now().Unix()
+	_, err := d.db.ExecContext(ctx, q, newID(), email, address, now)
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unique") {
+		return nil
+	}
+	return err
+}
+
+func (d *DB) FindUserByEmail(ctx context.Context, email string) (*User, error) {
+	if d == nil || d.db == nil {
+		return nil, errors.New("database is not initialized")
+	}
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return nil, errors.New("email is required")
+	}
+
+	const q = `
+	SELECT uuid, email, address, created_at
+	FROM users
+	WHERE email = ?
+	LIMIT 1;
+	`
+	var u User
+	if err := d.db.QueryRowContext(ctx, q, email).Scan(&u.UUID, &u.Email, &u.Address, &u.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+func (d *DB) InsertEmailTransfer(ctx context.Context, t EmailTransfer) error {
+	if d == nil || d.db == nil {
+		return errors.New("database is not initialized")
+	}
+	if t.UUID == "" {
+		t.UUID = newID()
+	}
+	now := time.Now().Unix()
+	if t.CreatedAt == 0 {
+		t.CreatedAt = now
+	}
+	if t.UpdatedAt == 0 {
+		t.UpdatedAt = now
+	}
+	const q = `
+	INSERT INTO email_transfers (
+		uuid, from_email, to_email, amount_usdc, status, onchain_tx_hash, created_at, updated_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+	`
+	_, err := d.db.ExecContext(ctx, q, t.UUID, t.FromEmail, t.ToEmail, t.AmountUSDC, t.Status, t.OnchainTxHash, t.CreatedAt, t.UpdatedAt)
+	return err
+}
+
+func (d *DB) ListPendingEmailTransfersForRecipient(ctx context.Context, email string) ([]EmailTransfer, error) {
+	if d == nil || d.db == nil {
+		return nil, errors.New("database is not initialized")
+	}
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return nil, errors.New("email is required")
+	}
+
+	const q = `
+	SELECT uuid, from_email, to_email, amount_usdc, status, onchain_tx_hash, created_at, updated_at
+	FROM email_transfers
+	WHERE to_email = ? AND status = 'pending'
+	ORDER BY created_at ASC;
+	`
+	rows, err := d.db.QueryContext(ctx, q, email)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []EmailTransfer
+	for rows.Next() {
+		var t EmailTransfer
+		if err := rows.Scan(&t.UUID, &t.FromEmail, &t.ToEmail, &t.AmountUSDC, &t.Status, &t.OnchainTxHash, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) MarkEmailTransfersClaimed(ctx context.Context, email string) error {
+	if d == nil || d.db == nil {
+		return errors.New("database is not initialized")
+	}
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return errors.New("email is required")
+	}
+	const q = `
+	UPDATE email_transfers
+	SET status = 'claimed', updated_at = ?
+	WHERE to_email = ? AND status = 'pending';
+	`
+	_, err := d.db.ExecContext(ctx, q, time.Now().Unix(), email)
+	return err
+}
+
+func (d *DB) UpsertFXRate(ctx context.Context, pair, rate string, fetchedAt int64) error {
+	if d == nil || d.db == nil {
+		return errors.New("database is not initialized")
+	}
+	pair = strings.TrimSpace(pair)
+	rate = strings.TrimSpace(rate)
+	if pair == "" || rate == "" {
+		return errors.New("pair and rate are required")
+	}
+	if fetchedAt == 0 {
+		fetchedAt = time.Now().Unix()
+	}
+	const q = `
+	INSERT INTO fx_rates (uuid, pair, rate, fetched_at)
+	VALUES (?, ?, ?, ?);
+	`
+	_, err := d.db.ExecContext(ctx, q, newID(), pair, rate, fetchedAt)
+	return err
+}
+
+func (d *DB) LatestFXRate(ctx context.Context, pair string) (*FXRate, error) {
+	if d == nil || d.db == nil {
+		return nil, errors.New("database is not initialized")
+	}
+	pair = strings.TrimSpace(pair)
+	if pair == "" {
+		return nil, errors.New("pair is required")
+	}
+	const q = `
+	SELECT uuid, pair, rate, fetched_at
+	FROM fx_rates
+	WHERE pair = ?
+	ORDER BY fetched_at DESC
+	LIMIT 1;
+	`
+	var r FXRate
+	if err := d.db.QueryRowContext(ctx, q, pair).Scan(&r.UUID, &r.Pair, &r.Rate, &r.FetchedAt); err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
 
 func (d *DB) UpdateTransactionState(ctx context.Context, txHash string, state string) error {
@@ -915,6 +1110,55 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 
 	CREATE INDEX IF NOT EXISTS idx_smart_accounts_owner_network
 	ON smart_accounts(owner_address, network);
+
+	CREATE TABLE IF NOT EXISTS users (
+		uuid       TEXT PRIMARY KEY NOT NULL,
+		email      TEXT NOT NULL UNIQUE,
+		address    TEXT NOT NULL,
+		created_at INTEGER NOT NULL
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_users_email
+	ON users(email);
+
+	CREATE TABLE IF NOT EXISTS email_transfers (
+		uuid            TEXT PRIMARY KEY NOT NULL,
+		from_email      TEXT NOT NULL,
+		to_email        TEXT NOT NULL,
+		amount_usdc     TEXT NOT NULL,
+		status          TEXT NOT NULL,
+		onchain_tx_hash TEXT NOT NULL DEFAULT '',
+		created_at      INTEGER NOT NULL,
+		updated_at      INTEGER NOT NULL
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_email_transfers_recipient_status
+	ON email_transfers(to_email, status);
+
+	CREATE TABLE IF NOT EXISTS address_events (
+		uuid       TEXT PRIMARY KEY NOT NULL,
+		address    TEXT NOT NULL,
+		chain      TEXT NOT NULL,
+		token      TEXT NOT NULL,
+		amount     TEXT NOT NULL,
+		tx_hash    TEXT NOT NULL,
+		direction  TEXT NOT NULL,
+		timestamp  INTEGER NOT NULL,
+		created_at INTEGER NOT NULL
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_address_events_address_time
+	ON address_events(address, timestamp DESC);
+
+	CREATE TABLE IF NOT EXISTS fx_rates (
+		uuid       TEXT PRIMARY KEY NOT NULL,
+		pair       TEXT NOT NULL,
+		rate       TEXT NOT NULL,
+		fetched_at INTEGER NOT NULL
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_fx_rates_pair_time
+	ON fx_rates(pair, fetched_at DESC);
 	`
 	if _, err := db.ExecContext(ctx, q); err != nil {
 		return err

@@ -17,19 +17,61 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	ethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/mindsgn-studio/pocket-money-app/core/cmd/api/middleware"
+	"github.com/mindsgn-studio/pocket-money-app/core/cmd/api/store"
 	"github.com/mindsgn-studio/pocket-money-app/core/cmd/api/types"
 	"github.com/mindsgn-studio/pocket-money-app/core/internal/config"
 	coreeth "github.com/mindsgn-studio/pocket-money-app/core/internal/ethereum"
 )
 
-type API struct{}
+type API struct {
+	store store.APIDatabase
 
-func NewAPI() (*API, error) {
-	return &API{}, nil
+	idempotencyMu   sync.Mutex
+	idempotencySeen map[string]int64
+}
+
+func NewAPI(apiStore store.APIDatabase) (*API, error) {
+	if apiStore == nil {
+		return nil, errors.New("store is required")
+	}
+	return &API{store: apiStore, idempotencySeen: make(map[string]int64)}, nil
+}
+
+func (a *API) reserveIdempotencyKey(w http.ResponseWriter, r *http.Request, scope string) bool {
+	key := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if key == "" {
+		writeError(w, r, http.StatusBadRequest, "missing_idempotency_key", "Idempotency-Key header is required", false)
+		return false
+	}
+
+	const ttlSeconds = int64(12 * 60 * 60)
+	now := time.Now().Unix()
+	caller := strings.TrimSpace(r.Header.Get("X-API-Key"))
+	if caller == "" {
+		caller = strings.TrimSpace(r.Header.Get("Authorization"))
+	}
+	composite := fmt.Sprintf("%s|%s|%s", strings.ToLower(scope), strings.ToLower(caller), strings.ToLower(key))
+
+	a.idempotencyMu.Lock()
+	defer a.idempotencyMu.Unlock()
+
+	for seenKey, ts := range a.idempotencySeen {
+		if now-ts > ttlSeconds {
+			delete(a.idempotencySeen, seenKey)
+		}
+	}
+
+	if _, exists := a.idempotencySeen[composite]; exists {
+		writeError(w, r, http.StatusConflict, "duplicate_request", "Duplicate request blocked by idempotency key", false)
+		return false
+	}
+
+	a.idempotencySeen[composite] = now
+	return true
 }
 
 func (a *API) Health() http.HandlerFunc {
@@ -48,6 +90,196 @@ func (a *API) Health() http.HandlerFunc {
 	}
 }
 
+func (a *API) RegisterUser() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
+			return
+		}
+		started := time.Now()
+		var req types.UserRegisterRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, r, http.StatusBadRequest, "invalid_request", err.Error(), false)
+			return
+		}
+		email := strings.TrimSpace(strings.ToLower(req.Email))
+		address := strings.TrimSpace(req.Address)
+		if email == "" || !common.IsHexAddress(address) {
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "valid email and address are required", false)
+			return
+		}
+		if err := a.store.InsertUserIfMissing(r.Context(), email, common.HexToAddress(address).Hex()); err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, types.UserRegisterResponse{
+			Email:   email,
+			Address: common.HexToAddress(address).Hex(),
+		}, map[string]int{"total": int(time.Since(started).Milliseconds())})
+	}
+}
+
+func (a *API) GetUserAddress() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
+			return
+		}
+		started := time.Now()
+		email := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("email")))
+		if email == "" {
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "email is required", false)
+			return
+		}
+		user, err := a.store.FindUserByEmail(r.Context(), email)
+		if err != nil {
+			writeError(w, r, http.StatusNotFound, "not_found", "user not found", false)
+			return
+		}
+		writeSuccess(w, r, types.UserAddressResponse{
+			Email:   user.Email,
+			Address: user.Address,
+		}, map[string]int{"total": int(time.Since(started).Milliseconds())})
+	}
+}
+
+func (a *API) GetBalances() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
+			return
+		}
+		started := time.Now()
+		address := strings.TrimSpace(r.URL.Query().Get("address"))
+		network := normalizeNetwork(r.URL.Query().Get("network"))
+		if address == "" || !common.IsHexAddress(address) {
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "valid address is required", false)
+			return
+		}
+		if network == "" {
+			network = "ethereum-sepolia"
+		}
+		ethBalance, err := coreeth.GetTokenBalanceForAddress(r.Context(), address, network, coreeth.NativeTokenIdentifier)
+		if err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+		usdcBalance, err := coreeth.GetTokenBalanceForAddress(r.Context(), address, network, "usdc")
+		if err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, types.BalanceResponse{
+			Address:          common.HexToAddress(address).Hex(),
+			Network:          network,
+			EthBalance:       ethBalance,
+			UsdcBalance:      usdcBalance,
+			HideEthByDefault: true,
+		}, map[string]int{"total": int(time.Since(started).Milliseconds())})
+	}
+}
+
+func (a *API) SendEmailPayment() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
+			return
+		}
+		if !a.reserveIdempotencyKey(w, r, "payments_send_email") {
+			return
+		}
+		started := time.Now()
+		var req types.SendEmailPaymentRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, r, http.StatusBadRequest, "invalid_request", err.Error(), false)
+			return
+		}
+		from := strings.TrimSpace(strings.ToLower(req.FromEmail))
+		to := strings.TrimSpace(strings.ToLower(req.ToEmail))
+		amount := strings.TrimSpace(req.AmountUSDC)
+		if from == "" || to == "" || amount == "" {
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "fromEmail, toEmail, and amountUsdc are required", false)
+			return
+		}
+		t := store.EmailTransfer{
+			FromEmail:  from,
+			ToEmail:    to,
+			AmountUSDC: amount,
+			Status:     "pending",
+		}
+		if err := a.store.InsertEmailTransfer(r.Context(), &t); err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, types.SendEmailPaymentResponse{
+			ID:         t.ID,
+			Status:     t.Status,
+			FromEmail:  t.FromEmail,
+			ToEmail:    t.ToEmail,
+			AmountUSDC: t.AmountUSDC,
+		}, map[string]int{"total": int(time.Since(started).Milliseconds())})
+	}
+}
+
+func (a *API) ClaimPayments() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
+			return
+		}
+		if !a.reserveIdempotencyKey(w, r, "payments_claim") {
+			return
+		}
+		started := time.Now()
+		var req types.ClaimPaymentsRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeError(w, r, http.StatusBadRequest, "invalid_request", err.Error(), false)
+			return
+		}
+		email := strings.TrimSpace(strings.ToLower(req.Email))
+		if email == "" {
+			writeError(w, r, http.StatusBadRequest, "invalid_request", "email is required", false)
+			return
+		}
+		pending, err := a.store.ListPendingEmailTransfersForRecipient(r.Context(), email)
+		if err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+		if err := a.store.MarkEmailTransfersClaimed(r.Context(), email); err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, types.ClaimPaymentsResponse{
+			ClaimedCount: len(pending),
+		}, map[string]int{"total": int(time.Since(started).Milliseconds())})
+	}
+}
+
+func (a *API) GetLatestFX() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
+			return
+		}
+		started := time.Now()
+		pair := strings.TrimSpace(strings.ToUpper(r.URL.Query().Get("pair")))
+		if pair == "" {
+			pair = "USDCZAR"
+		}
+		rate, err := a.store.LatestFXRate(r.Context(), pair)
+		if err != nil {
+			writeMappedError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, types.FXLatestResponse{
+			Pair:      rate.Pair,
+			Rate:      rate.Rate,
+			FetchedAt: rate.FetchedAt,
+		}, map[string]int{"total": int(time.Since(started).Milliseconds())})
+	}
+}
+
 // simple in-memory funding counter per (network, owner) to avoid accidental abuse in dev
 var ownerFundCounts = struct {
 	mu     sync.Mutex
@@ -58,6 +290,9 @@ func (a *API) PrepareOwner() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
+			return
+		}
+		if !a.reserveIdempotencyKey(w, r, "aa_prepare_owner") {
 			return
 		}
 
@@ -315,6 +550,9 @@ func (a *API) SendSponsored() http.HandlerFunc {
 			writeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
 			return
 		}
+		if !a.reserveIdempotencyKey(w, r, "aa_send_sponsored") {
+			return
+		}
 
 		started := time.Now()
 		var req types.SendSponsoredRequest
@@ -355,7 +593,7 @@ func (a *API) SendSponsored() http.HandlerFunc {
 				writeError(w, r, http.StatusBadRequest, "invalid_request", "invalid entryPointAddress", false)
 				return
 			}
-			if strings.ToLower(v) != strings.ToLower(entryPointAddress) {
+			if !strings.EqualFold(v, entryPointAddress) {
 				writeError(w, r, http.StatusBadRequest, "invalid_request", "entryPointAddress does not match configured deployment", false)
 				return
 			}
@@ -421,6 +659,7 @@ func debugLogAA(hypothesisID, location, message string, data map[string]any) {
 		return
 	}
 }
+
 // #endregion
 
 func buildReadiness(ctx context.Context, network, ownerAddress string) (coreeth.SmartAccountCreationReadiness, error) {
