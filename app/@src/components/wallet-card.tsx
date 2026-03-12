@@ -1,57 +1,41 @@
-import { useState } from 'react';
-import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { useState, useEffect } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import useWallet from '../store/wallet';
-
-function truncateAddress(addr: string): string {
-  if (!addr || addr.length < 12) return addr;
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-}
-
-function formatBalance(balance: string, symbol: string): string {
-  const n = parseFloat(balance);
-  if (isNaN(n)) return `-- ${symbol}`;
-  if (symbol === 'USDC' || symbol === 'USDT') {
-    return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${symbol}`;
-  }
-  return `${n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 })} ${symbol}`;
-}
+import { getLocales } from 'expo-localization';
+import { pocketBackend } from '../lib/api/pocketBackend';
 
 export default function WalletCard() {
-  const { walletAddress, network, balances } = useWallet();
-  const [copied, setCopied] = useState(false);
+  const locale = getLocales();
+  const { walletAddress } = useWallet();
 
-  const usdc = balances.find((b) => b.symbol === 'USDC');
-  const eth = balances.find((b) => b.isNative);
+  const [usdcBalance, setUsdcBalance] = useState(0);
 
-  const handleCopy = async () => {
-    if (!walletAddress) return;
-    await Share.share({ message: walletAddress });
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
+  useEffect(() => {
+    const bootstrap = async () => {
+      const response = await pocketBackend.listTransactions(walletAddress);
+
+      const usdcTxs = response.transactions.filter(
+        (tx: any) => tx.tokenSymbol === 'USDC'
+      );
+
+      const balance = usdcTxs.reduce((total: number, tx: any) => {
+        const amount = Number(tx.amount) / 1e6;
+        return tx.direction === 'credit'
+          ? total + amount
+          : total - amount;
+      }, 0);
+
+      setUsdcBalance(balance);
+    };
+
+    bootstrap();
+  }, []);
 
   return (
     <View style={styles.card} testID="wallet-card">
-      <View style={styles.header}>
-        <Text style={styles.networkBadge}>{network || 'Ethereum'}</Text>
-      </View>
-
       <Text style={styles.primaryBalance}>
-        {usdc ? formatBalance(usdc.balance, 'USDC') : '-- USDC'}
+        {locale[0].currencySymbol} {usdcBalance.toFixed(2)}
       </Text>
-
-      {eth && (
-        <Text style={styles.secondaryBalance}>
-          {formatBalance(eth.balance, eth.symbol)}
-        </Text>
-      )}
-
-      <Pressable onPress={handleCopy} testID="wallet-address-copy">
-        <Text style={styles.address}>
-          {walletAddress ? truncateAddress(walletAddress) : 'No wallet'}
-          {copied ? '  ✓ Copied' : ''}
-        </Text>
-      </Pressable>
     </View>
   );
 }
@@ -62,24 +46,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#161B27',
     padding: 20,
     gap: 6,
+    height: 150,
     borderWidth: 1,
     borderColor: '#2A3143',
     marginBottom: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: 4,
-  },
-  networkBadge: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#60A5FA',
-    backgroundColor: '#1E2D4A',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 99,
-    overflow: 'hidden',
   },
   primaryBalance: {
     fontSize: 32,
@@ -92,11 +62,4 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontWeight: '500',
   },
-  address: {
-    marginTop: 10,
-    fontSize: 13,
-    color: '#64748B',
-    fontFamily: 'monospace',
-  },
 });
-

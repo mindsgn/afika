@@ -12,6 +12,7 @@ import PocketCore from "@/modules/pocket-module";
 import { Directory, Paths } from 'expo-file-system';
 import useWallet from '@/@src/store/wallet';
 import { savePin, markOnboarded } from '@/@src/lib/security/sensitiveAuth';
+import { pocketBackend } from '@/@src/lib/api/pocketBackend';
 
 const PIN_LENGTH = 5;
 
@@ -20,6 +21,7 @@ export default function PinScreen() {
     setWalletAddress,
     setNetwork,
     clearWalletState,
+    network
   } = useWallet();
   const router = useRouter();
   const { pin } = useLocalSearchParams<{
@@ -45,12 +47,19 @@ export default function PinScreen() {
     try {
       const dataDir = new Directory(Paths.document);
       setStatus('Preparing secure wallet...');
-      // initWalletSecure manages key material via iOS Keychain — no password arg needed
       await PocketCore.initWalletSecure(dataDir.uri);
       const walletAddress = await PocketCore.openOrCreateWallet('Main Wallet');
       setWalletAddress(walletAddress);
-      setNetwork(process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 'ethereum-mainnet' : 'ethereum-sepolia');
 
+      setNetwork(process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 'ethereum-mainnet' : 'ethereum-sepolia');
+      
+      try {
+        await pocketBackend.saveWallet(walletAddress, network)
+        const response = await pocketBackend.listTransactions(walletAddress)
+      } catch (error) {
+
+      }
+  
       await savePin(confirmedPin);
       await markOnboarded();
 

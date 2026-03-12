@@ -2,14 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import PocketCore from '@/modules/pocket-module';
 import { Directory, Paths } from 'expo-file-system';
+import * as SecureStore from 'expo-secure-store';
 import useWallet from '@/@src/store/wallet';
 import type { TokenBalance } from '@/@src/store/wallet';
 import { Screen, BodyText, Input, PrimaryButton } from '@/@src/components/Primitives';
 import PinAuthSheet from '@/@src/components/PinAuthSheet';
-import { tryBiometricAuth, verifyStoredPin } from '@/@src/lib/security/sensitiveAuth';
-import WalletCard from '@/@src/components/wallet-card';
-import TransactionList from '@/@src/components/transactions';
-import ActionCard from '@/@src/components/action';
+import { verifyStoredPin } from '@/@src/lib/security/sensitiveAuth';
+import { sendUSDC, SECURE_STORE_PRIVATE_KEY } from '@/@src/lib/ethereum/sendUSDC';
 
 const DEFAULT_NETWORK: 'ethereum-mainnet' | 'ethereum-sepolia' =
   process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 'ethereum-mainnet' : 'ethereum-sepolia';
@@ -28,7 +27,6 @@ export default function Home() {
   const [pinPromptVisible, setPinPromptVisible] = useState(false);
   const authResolverRef = useRef<((ok: boolean) => void) | null>(null);
 
-  /*
   useEffect(() => {
     const bootstrap = async () => {
       try {
@@ -37,6 +35,11 @@ export default function Home() {
         await PocketCore.initWalletSecure(dataDir.uri);
         const address = await PocketCore.openOrCreateWallet('Main Wallet');
         setWalletAddress(address);
+        const existingKey = await SecureStore.getItemAsync(SECURE_STORE_PRIVATE_KEY);
+        if (!existingKey) {
+          const exportedKey = await PocketCore.exportPrivateKey();
+          await SecureStore.setItemAsync(SECURE_STORE_PRIVATE_KEY, exportedKey);
+        }
 
         // Register the active network and USDC token so balance/send ops work
         const rpcURL = DEFAULT_NETWORK === 'ethereum-mainnet'
@@ -59,7 +62,6 @@ export default function Home() {
 
     bootstrap();
   }, [setWalletAddress, setNetwork, setBalances]);
-  */
 
   const onPinConfirm = async (pin: string): Promise<boolean> => {
     const ok = await verifyStoredPin(pin);
@@ -78,23 +80,11 @@ export default function Home() {
   
   const onSend = async () => {
     try {
-      const biometricApproved = await tryBiometricAuth('Confirm transfer');
-      if (!biometricApproved) {
-        const pinApproved = await new Promise<boolean>((resolve) => {
-          authResolverRef.current = resolve;
-          setPinPromptVisible(true);
-        });
-
-        if (!pinApproved) {
-          setStatus('Transfer canceled. Authentication required.');
-          return;
-        }
-      }
-
       setStatus(`Sending ${tokenIdentifier.toUpperCase()}...`);
-      await PocketCore.sendToken(DEFAULT_NETWORK, tokenIdentifier, destination, amount);
-      setStatus('Transfer submitted');
+      const txHash = await sendUSDC(DEFAULT_NETWORK, destination, amount);
+      setStatus(`Transfer submitted: ${txHash}`);
     } catch (error) {
+      console.log(error)
       setStatus(`Send failed: ${String(error)}`);
     }
   };
@@ -102,11 +92,6 @@ export default function Home() {
   return (
     <Screen>
       <ScrollView contentContainerStyle={styles.container} testID="home-screen">
-        <WalletCard />
-        <ActionCard />
-        <TransactionList />
-        {
-        /*
           <BodyText style={styles.section}>Transfer</BodyText>
           <Input
             testID="token-input"
@@ -139,8 +124,6 @@ export default function Home() {
             onConfirm={onPinConfirm}
             onCancel={onPinCancel}
           />
-        */
-        }
       </ScrollView>
     </Screen>
   );

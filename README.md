@@ -1,59 +1,51 @@
 # Pocket Money
 
-Pocket Money is a mobile wallet project with a Go core (`gomobile`), native Expo bridges (iOS/Android), and a simple EOA-based USDC/ETH wallet on Ethereum (Sepolia for testing).
+Pocket Money is a non-custodial mobile wallet: a Go EOA core (via `gomobile`), an Expo app, and a lightweight backend API that caches balances, transactions, and FX rates.
 
 ## Monorepo map
 
-- `core/`: Go wallet core (SQLCipher persistence, EOA token send flows, backend API)
-- `app/`: Expo app + native bridge module (`modules/pocket-module`) for PocketCore
-- `contract/`: Hardhat contracts, tests, and deployment scripts (smart accounts for a future phase)
-- `docs/`: architecture notes, implementation logs, active tasks, and business docs
+- `core/`: Go wallet core + backend API (`core/cmd/api`) + CLI
+- `app/`: Expo app + native bridge module (`modules/pocket-module`) for `WalletCore`
+- `docs/`: technical docs, implementation notes, and task lists
+- `doc/`: product, business, and marketing notes
 
-## MVP v1: Non–Smart-Account Wallet
+## MVP v1: EOA Wallet
 
-For MVP v1 we paused ERC‑4337 smart accounts and paymaster sponsorship and focused on a simple, reliable EOA wallet:
+**On-device (Go core via gomobile):**
+- Generates and stores a single EOA per user in SQLCipher.
+- Secure init path (`initWalletSecure`) pulls key material from Keychain/Keystore.
+- ETH + USDC balances, sends, and transaction history.
+- Watch list for inbound monitoring and encrypted backup export/import.
 
-- **On-device (Go core via gomobile)**:
-  - Generate and store a single EOA per user (encrypted DB + OS keystore).
-  - Get ETH/USDC balances and transaction history.
-  - Send ETH or USDC directly from the EOA.
-- **Backend (`core/cmd/api`)**:
-  - User registration (`/v1/users/*`) and address mapping (email → EOA).
-  - Balance, FX, and payment endpoints (`/v1/balances`, `/v1/payments/*`, `/v1/fx/*`).
-  - API-key auth + simple per-IP rate limiting.
-- **App (`app/`)**:
-  - Expo app with secure onboarding (password + `expo-secure-store`), home, send, transactions, and settings screens.
-  - Cash App / Robinhood–style UI; USDC-first, ETH hidden by default.
+**Backend (optional, non-custodial):**
+- Caches balances, transactions, and FX rates for faster UI and analytics.
+- No user private keys; does not sign transactions.
+- See `docs/backend.md` for endpoints and worker behavior.
 
-The previous AA stack is documented for future work in `doc/smart-accounts-plan.md`.
+**App:**
+- Default network is `ethereum-sepolia` in development and `ethereum-mainnet` in production.
+- Registers the active network + USDC token at startup.
+- Uses biometrics/PIN gating for sends.
 
-## Current network defaults
+## Network defaults
 
-- Development default network: `ethereum-sepolia`
-- Production default network: `ethereum-mainnet`
-- Default asset scope in app/core: `native` and `usdc`
+- App default network: `ethereum-sepolia` (dev) / `ethereum-mainnet` (prod).
+- Default token scope in app: `native` and `usdc`.
 
 ## Core API surface (bridge-facing)
 
-The Expo bridge (`PocketCore`) exposes the `WalletCore` facade methods, including:
+The Expo bridge exposes the `WalletCore` facade. For the full method list see:
+- `app/modules/pocket-module/README.md`
 
-- `initWallet(dataDir, password, masterKeyB64, kdfSaltB64)`
-- `initWalletSecure(dataDir, password)`
-- `closeWallet()`
-- `openOrCreateWallet(name)`
-- `createEthereumWallet(name)`
-- `getAccountSummary(network)`
-- `getAccountSnapshot(network)`
-- `sendToken(network, tokenIdentifier, destination, amount, note, providerID)`
-- `listAllTransactions(network, limit, offset)`
-- `exportBackup(passphrase)`
-- `importBackup(payload, passphrase)`
-
-Smart-account and sponsorship methods exist in the codebase but are not used in MVP v1; see `doc/smart-accounts-plan.md` for future work.
+Key capabilities include:
+- wallet lifecycle + secure init
+- network/token registration
+- balances, transfers, and transaction history
+- watched addresses and backup export/import
 
 ## Validation commands
 
-### Contracts
+### Contracts (future phase)
 
 ```bash
 cd contract
@@ -77,8 +69,7 @@ npx tsc --noEmit
 
 ## More docs
 
-- Contract architecture: `docs/contract.md`
-- Backend API plan: `docs/backend.md`
+- Backend API: `docs/backend.md`
 - Working notes: `docs/notes.md`
 - Active task list: `docs/tasks.md`
 - Core internals: `core/README.md`

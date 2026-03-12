@@ -1,5 +1,7 @@
 ## Pocket Money – Business Notes
 
+Note: This older outline is superseded by `doc/busniess.md` (dated 10 March 2026).
+
 ### Target market (South Africa)
 
 - Everyday South Africans who need to send and receive money quickly and cheaply, especially:
@@ -32,6 +34,4 @@
 
 - Move from testnet to production networks (L2s with cheaper fees).
 - Add card / virtual card integration through banking-as-a-service partners.
-- Reintroduce smart accounts and paymasters to sponsor gas for mainstream users.
 - Add compliance tooling (KYC/AML workflows) and reporting.
-

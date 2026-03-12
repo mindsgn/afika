@@ -1,6 +1,6 @@
 import { NativeModule, requireNativeModule } from 'expo';
 
-import { PocketApi, PocketNetwork, TokenIdentifier } from './PocketModule.types';
+import { PocketApi } from './PocketModule.types';
 
 declare class PocketModule extends NativeModule implements PocketApi {
   initWallet(dataDir: string, masterKeyB64: string, kdfSaltB64: string): Promise<void>;
@@ -14,12 +14,14 @@ declare class PocketModule extends NativeModule implements PocketApi {
   listAccounts(): Promise<string>;
   validateAddress(addr: string): Promise<string>;
   signMessage(message: string): Promise<string>;
+  exportPrivateKey(): Promise<string>;
   getTokenBalance(networkName: string, tokenIdentifier: string): Promise<string>;
   getAllBalances(networkName: string): Promise<string>;
   getPriceHistory(networkName: string, limit: number): Promise<string>;
   addWatchedAddress(address: string, label: string): Promise<void>;
   listWatchedAddresses(): Promise<string>;
   sendToken(networkName: string, tokenIdentifier: string, recipient: string, amount: string): Promise<string>;
+  sendUSDC(networkName: string, recipient: string, amount: string): Promise<string>;
   syncInboundTransactions(networkName: string): Promise<string>;
   listTokenTransactions(networkName: string, tokenIdentifier: string, limit: number, offset: number): Promise<string>;
   listAllTransactions(networkName: string, limit: number, offset: number): Promise<string>;
@@ -27,7 +29,6 @@ declare class PocketModule extends NativeModule implements PocketApi {
   importWalletBackup(payload: string, passphrase: string): Promise<string>;
 }
 
-// This call loads the native module object from the JSI.
 let PocketCoreModule: PocketModule;
 
 try {

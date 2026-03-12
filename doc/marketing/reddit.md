@@ -20,7 +20,7 @@ Architecture:
 - Sepolia private beta first
 
 Important product decision:
-We paused smart-account/AA complexity for v1 so we can ship faster and reduce failure points. We will revisit AA after MVP reliability is proven.
+We kept the MVP focused so we can ship faster and reduce failure points.
 
 I would love feedback on:
 1. What would make this genuinely useful in South Africa?

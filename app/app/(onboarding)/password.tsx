@@ -11,6 +11,7 @@ import { router } from 'expo-router';
 import PocketCore from '@/modules/pocket-module';
 import { Directory, Paths } from 'expo-file-system';
 import useWallet from '@/@src/store/wallet';
+import { pocketBackend } from '@/@src/lib/api/pocketBackend';
 
 const PIN_LENGTH = 5;
 const DEFAULT_NETWORK: 'ethereum-mainnet' | 'ethereum-sepolia' =
@@ -40,9 +41,16 @@ export default function PasswordScreen() {
       // initWalletSecure manages key material via iOS Keychain — no password arg needed
       await PocketCore.initWalletSecure(dataDir.uri);
       const walletAddress = await PocketCore.openOrCreateWallet('Main Wallet');
-      setWalletAddress(walletAddress);
-      setNetwork(DEFAULT_NETWORK);
+      
+      try {
+        await pocketBackend.saveWallet(walletAddress, DEFAULT_NETWORK)
+        const response = await pocketBackend.listTransactions(walletAddress)
+      } catch {
+      }
 
+      setWalletAddress(walletAddress);
+      
+      setNetwork(DEFAULT_NETWORK);
       router.replace('/(home)');
     } catch (error) {
       clearWalletState();

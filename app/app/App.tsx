@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Button, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import PocketCore from '@/modules/pocket-module';
 import { Directory, Paths } from 'expo-file-system';
 
@@ -14,9 +14,6 @@ export default function App() {
   const [destination, setDestination] = useState('')
   const [tokenIdentifier, setTokenIdentifier] = useState('usdc')
   const [amount, setAmount] = useState('')
-  const [sendMode, setSendMode] = useState<'auto' | 'direct' | 'sponsored'>('auto')
-  const [note, setNote] = useState('')
-  const [providerID, setProviderID] = useState('')
   const [status, setStatus] = useState('Initializing...')
 
   const refreshData = useCallback(async () => {
@@ -45,7 +42,7 @@ export default function App() {
 
   const onSendToken = async () => {
     try {
-      setStatus(`Sending ${tokenIdentifier.toUpperCase()} (${sendMode})...`)
+      setStatus(`Sending ${tokenIdentifier.toUpperCase()}...`)
       const result = await PocketCore.sendToken(DEFAULT_NETWORK, tokenIdentifier, destination, amount)
       setStatus(`Submitted: ${result}`)
       await refreshData()
@@ -85,21 +82,8 @@ export default function App() {
 
       <Text style={styles.section}>Send Token</Text>
       <TextInput style={styles.input} value={tokenIdentifier} onChangeText={setTokenIdentifier} placeholder="Token identifier (native/usdc)" autoCapitalize="none" />
-      <View style={styles.modeRow}>
-        {(['auto', 'direct', 'sponsored'] as const).map((mode) => (
-          <Pressable
-            key={mode}
-            style={[styles.modeChip, sendMode === mode ? styles.modeChipActive : null]}
-            onPress={() => setSendMode(mode)}
-          >
-            <Text style={[styles.modeChipText, sendMode === mode ? styles.modeChipTextActive : null]}>{mode.toUpperCase()}</Text>
-          </Pressable>
-        ))}
-      </View>
       <TextInput style={styles.input} value={destination} onChangeText={setDestination} placeholder="Destination address" autoCapitalize="none" />
       <TextInput style={styles.input} value={amount} onChangeText={setAmount} placeholder="Amount (e.g. 1.50)" keyboardType="decimal-pad" />
-      <TextInput style={styles.input} value={note} onChangeText={setNote} placeholder="Note" />
-      <TextInput style={styles.input} value={providerID} onChangeText={setProviderID} placeholder="Provider ID (optional)" autoCapitalize="none" />
       <Button title="Send" onPress={onSendToken} />
 
       <Text style={styles.section}>Backup</Text>
@@ -157,26 +141,6 @@ const styles = StyleSheet.create({
   },
   spacer: {
     height: 8
-  },
-  modeRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  modeChip: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  modeChipActive: {
-    backgroundColor: '#0f172a',
-  },
-  modeChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  modeChipTextActive: {
-    color: '#ffffff',
   },
   status: {
     marginTop: 12,

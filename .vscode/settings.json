@@ -3,5 +3,6 @@
     "*": true,
     "plaintext": false,
     "dotenv": false
-  }
+  },
+  "chatgpt.openOnStartup": false
 }

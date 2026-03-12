@@ -2,9 +2,12 @@ package database
 
 import (
 	"context"
-	"math/big"
 	"testing"
 )
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
 
 type testSecureKeyStore struct {
 	masterKey []byte
@@ -21,61 +24,36 @@ func (t *testSecureKeyStore) GetOrCreateKDFSalt(_ context.Context) ([]byte, erro
 
 func newTestSecureKeyStore() *testSecureKeyStore {
 	return &testSecureKeyStore{
-		masterKey: []byte("0123456789abcdef0123456789abcdef"),
-		salt:      []byte("abcdef0123456789"),
+		masterKey: []byte("0123456789abcdef0123456789abcdef"), // 32 bytes
+		salt:      []byte("abcdef0123456789abcdef0123456789"), // 32 bytes
 	}
 }
 
-func TestOpenInsertListWalletLifecycle(t *testing.T) {
-	dir := t.TempDir()
-	ctx := context.Background()
-
-	db, err := Open(ctx, dir, "password-1", newTestSecureKeyStore())
+func openTestDB(t *testing.T) *DB {
+	t.Helper()
+	db, err := Open(context.Background(), t.TempDir(), newTestSecureKeyStore())
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
 
-	exists, err := db.WalletExists(ctx)
-	if err != nil {
-		t.Fatalf("WalletExists() error = %v", err)
-	}
-	if exists {
-		t.Fatalf("expected no wallets at start")
-	}
+// ---------------------------------------------------------------------------
+// Open / lifecycle
+// ---------------------------------------------------------------------------
 
-	err = db.InsertWallet(ctx, "ethereum", "Primary", "0x123", []byte("encrypted-key"))
-	if err != nil {
-		t.Fatalf("InsertWallet() error = %v", err)
-	}
-
-	exists, err = db.WalletExists(ctx)
-	if err != nil {
-		t.Fatalf("WalletExists() error = %v", err)
-	}
-	if !exists {
-		t.Fatalf("expected wallet to exist")
-	}
-
-	wallets, err := db.ListWallets(ctx)
-	if err != nil {
-		t.Fatalf("ListWallets() error = %v", err)
-	}
-	if len(wallets) != 1 {
-		t.Fatalf("expected 1 wallet, got %d", len(wallets))
-	}
-	if wallets[0].WalletType != "ethereum" {
-		t.Fatalf("unexpected wallet type: %s", wallets[0].WalletType)
-	}
-	if wallets[0].Address != "0x123" {
-		t.Fatalf("unexpected wallet address: %s", wallets[0].Address)
+func TestOpenAndClose(t *testing.T) {
+	db := openTestDB(t)
+	if db == nil {
+		t.Fatal("expected non-nil DB")
 	}
 }
 
 func TestOpenFailsWithNilKeystore(t *testing.T) {
-	_, err := Open(context.Background(), t.TempDir(), "password", nil)
+	_, err := Open(context.Background(), t.TempDir(), nil)
 	if err == nil {
-		t.Fatalf("expected error for nil keystore")
+		t.Fatal("expected error for nil keystore")
 	}
 }
 
@@ -83,9 +61,9 @@ func TestOpenFailsWithWrongKeyMaterial(t *testing.T) {
 	dir := t.TempDir()
 	ctx := context.Background()
 
-	first, err := Open(ctx, dir, "password", &testSecureKeyStore{
+	first, err := Open(ctx, dir, &testSecureKeyStore{
 		masterKey: []byte("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-		salt:      []byte("1111111111111111"),
+		salt:      []byte("11111111111111111111111111111111"),
 	})
 	if err != nil {
 		t.Fatalf("first Open() error = %v", err)
@@ -95,149 +73,280 @@ func TestOpenFailsWithWrongKeyMaterial(t *testing.T) {
 	}
 	_ = first.Close()
 
-	_, err = Open(ctx, dir, "password", &testSecureKeyStore{
+	_, err = Open(ctx, dir, &testSecureKeyStore{
 		masterKey: []byte("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-		salt:      []byte("2222222222222222"),
+		salt:      []byte("22222222222222222222222222222222"),
 	})
 	if err == nil {
-		t.Fatalf("expected Open() to fail with wrong key material")
+		t.Fatal("expected Open() to fail with wrong key material")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Wallet lifecycle
+// ---------------------------------------------------------------------------
+
+func TestInsertAndListWallets(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	exists, err := db.WalletExists(ctx)
+	if err != nil {
+		t.Fatalf("WalletExists() error = %v", err)
+	}
+	if exists {
+		t.Fatal("expected no wallets at start")
+	}
+
+	if err := db.InsertWallet(ctx, "ethereum", "Primary", "0xabcdef", []byte("encrypted-key")); err != nil {
+		t.Fatalf("InsertWallet() error = %v", err)
+	}
+
+	exists, err = db.WalletExists(ctx)
+	if err != nil {
+		t.Fatalf("WalletExists() after insert error = %v", err)
+	}
+	if !exists {
+		t.Fatal("expected wallet to exist after insert")
+	}
+
+	wallets, err := db.ListWallets(ctx)
+	if err != nil {
+		t.Fatalf("ListWallets() error = %v", err)
+	}
+	if len(wallets) != 1 {
+		t.Fatalf("expected 1 wallet, got %d", len(wallets))
+	}
+	if wallets[0].Address != "0xabcdef" {
+		t.Fatalf("unexpected address: %s", wallets[0].Address)
+	}
+}
+
+func TestInsertWalletIfMissingIdempotent(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	for i := 0; i < 3; i++ {
+		if err := db.InsertWalletIfMissing(ctx, "ethereum", "Primary", "0x1234", []byte("key")); err != nil {
+			t.Fatalf("InsertWalletIfMissing() iteration %d error = %v", i, err)
+		}
+	}
+
+	wallets, err := db.ListWallets(ctx)
+	if err != nil {
+		t.Fatalf("ListWallets() error = %v", err)
+	}
+	if len(wallets) != 1 {
+		t.Fatalf("expected 1 wallet after idempotent inserts, got %d", len(wallets))
 	}
 }
 
 func TestInsertWalletValidation(t *testing.T) {
 	var db DB
-	ctx := context.Background()
-
-	if err := db.InsertWallet(ctx, "", "", "", nil); err == nil {
-		t.Fatalf("expected validation error for uninitialized db")
+	if err := db.InsertWallet(context.Background(), "", "", "", nil); err == nil {
+		t.Fatal("expected validation error for uninitialized db")
 	}
 }
 
-func TestSponsoredOperationsPersistenceAndAggregation(t *testing.T) {
-	db, err := Open(context.Background(), t.TempDir(), "password", newTestSecureKeyStore())
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer db.Close()
+// ---------------------------------------------------------------------------
+// Transactions
+// ---------------------------------------------------------------------------
 
+func TestInsertAndListTransactions(t *testing.T) {
+	db := openTestDB(t)
 	ctx := context.Background()
-	sender := "0x1111111111111111111111111111111111111111"
+	wallet := "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-	if err := db.RecordSponsoredOperation(ctx, SponsoredOperation{
-		UserOperationID: "0xaaa",
-		SenderAddress:   sender,
-		Network:         "ethereum-sepolia",
-		TokenAddress:    "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
-		Recipient:       "0x2222222222222222222222222222222222222222",
-		AmountUnits:     "15000000",
-		Status:          "submitted",
-	}); err != nil {
-		t.Fatalf("RecordSponsoredOperation(first) error = %v", err)
-	}
-
-	if err := db.RecordSponsoredOperation(ctx, SponsoredOperation{
-		UserOperationID: "0xbbb",
-		SenderAddress:   sender,
-		Network:         "ethereum-sepolia",
-		TokenAddress:    "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
-		Recipient:       "0x3333333333333333333333333333333333333333",
-		AmountUnits:     "5000000",
-		Status:          "submitted",
-	}); err != nil {
-		t.Fatalf("RecordSponsoredOperation(second) error = %v", err)
+	tx := TransactionRecord{
+		WalletAddress: wallet,
+		TxHash:        "0xdeadbeef01",
+		FromAddress:   wallet,
+		ToAddress:     "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		TokenAddress:  "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238",
+		TokenSymbol:   "USDC",
+		Amount:        "5.00",
+		FeeETH:        "0.001",
+		FeeUSD:        "2.500000",
+		USDAmount:     "5",
+		Network:       "ethereum-sepolia",
+		TxMode:        "direct",
+		State:         "completed",
+		BlockNumber:   12345,
+		Timestamp:     1700000000,
 	}
 
-	count, err := db.CountSponsoredOperationsToday(ctx, sender)
-	if err != nil {
-		t.Fatalf("CountSponsoredOperationsToday() error = %v", err)
-	}
-	if count != 2 {
-		t.Fatalf("expected 2 sponsored ops, got %d", count)
+	if err := db.InsertTransaction(ctx, tx); err != nil {
+		t.Fatalf("InsertTransaction() error = %v", err)
 	}
 
-	sum, err := db.SumSponsoredAmountToday(ctx, sender)
-	if err != nil {
-		t.Fatalf("SumSponsoredAmountToday() error = %v", err)
-	}
-	if sum.Cmp(big.NewInt(20_000_000)) != 0 {
-		t.Fatalf("expected sponsored sum 20000000, got %s", sum.String())
-	}
-}
-
-func TestRecordPaymasterValidation(t *testing.T) {
-	db, err := Open(context.Background(), t.TempDir(), "password", newTestSecureKeyStore())
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer db.Close()
-
-	err = db.RecordPaymasterValidation(context.Background(), PaymasterValidation{
-		SenderAddress:   "0x1111111111111111111111111111111111111111",
-		Decision:        "rejected",
-		RejectionReason: "token is not eligible for sponsorship",
-		AmountUnits:     "1000000",
-		Metadata:        "ethereum-sepolia",
-	})
-	if err != nil {
-		t.Fatalf("RecordPaymasterValidation() error = %v", err)
-	}
-}
-
-func TestUpdateUserOperationSettlement(t *testing.T) {
-	db, err := Open(context.Background(), t.TempDir(), "password", newTestSecureKeyStore())
-	if err != nil {
-		t.Fatalf("Open() error = %v", err)
-	}
-	defer db.Close()
-
-	ctx := context.Background()
-	if err := db.InsertTransactionIfMissing(ctx, TransactionRecord{
-		TxHash:          "0xuserop",
-		UserOpHash:      "0xuserop",
-		Nonce:           1,
-		Chain:           "ethereum-sepolia",
-		Token:           "USDC",
-		Amount:          "1",
-		TransactionType: "transfer",
-		State:           "pending",
-		BundlerStatus:   "submitted",
-		TxMode:          "userop",
-		SponsorshipMode: "sponsored",
-		WalletAddress:   "0x1111111111111111111111111111111111111111",
-	}); err != nil {
-		t.Fatalf("InsertTransactionIfMissing() error = %v", err)
-	}
-
-	if err := db.RecordSponsoredOperation(ctx, SponsoredOperation{
-		UserOperationID: "0xuserop",
-		SenderAddress:   "0x1111111111111111111111111111111111111111",
-		Network:         "ethereum-sepolia",
-		TokenAddress:    "0x1",
-		Recipient:       "0x2",
-		AmountUnits:     "1",
-		Status:          "submitted",
-	}); err != nil {
-		t.Fatalf("RecordSponsoredOperation() error = %v", err)
-	}
-
-	if err := db.UpdateUserOperationSettlement(ctx, "0xuserop", "0xfinaltx", "completed", "included"); err != nil {
-		t.Fatalf("UpdateUserOperationSettlement() error = %v", err)
-	}
-
-	list, err := db.ListTransactions(ctx, "0x1111111111111111111111111111111111111111", "USDC", 10, 0)
+	rows, err := db.ListTransactions(ctx, wallet, "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238", 10, 0)
 	if err != nil {
 		t.Fatalf("ListTransactions() error = %v", err)
 	}
-	if len(list) != 1 {
-		t.Fatalf("expected 1 transaction, got %d", len(list))
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 transaction, got %d", len(rows))
 	}
-	if list[0].TxHash != "0xfinaltx" {
-		t.Fatalf("expected final tx hash, got %s", list[0].TxHash)
+	if rows[0].TxHash != tx.TxHash {
+		t.Fatalf("unexpected tx hash: %s", rows[0].TxHash)
 	}
-	if list[0].State != "completed" {
-		t.Fatalf("expected completed state, got %s", list[0].State)
+	if rows[0].TokenSymbol != "USDC" {
+		t.Fatalf("unexpected token symbol: %s", rows[0].TokenSymbol)
 	}
-	if list[0].BundlerStatus != "included" {
-		t.Fatalf("expected included bundler status, got %s", list[0].BundlerStatus)
+	if rows[0].FeeUSD != tx.FeeUSD {
+		t.Fatalf("unexpected feeUSD: %s", rows[0].FeeUSD)
+	}
+	if rows[0].USDAmount != tx.USDAmount {
+		t.Fatalf("unexpected usdAmount: %s", rows[0].USDAmount)
+	}
+}
+
+func TestInsertTransactionIfMissingIdempotent(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	wallet := "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	tx := TransactionRecord{
+		WalletAddress: wallet,
+		TxHash:        "0xabcdef01",
+		FromAddress:   wallet,
+		TokenSymbol:   "ETH",
+		Amount:        "1.0",
+		Network:       "ethereum-mainnet",
+		State:         "pending",
+	}
+
+	if err := db.InsertTransactionIfMissing(ctx, tx); err != nil {
+		t.Fatalf("InsertTransactionIfMissing() error = %v", err)
+	}
+	if err := db.InsertTransactionIfMissing(ctx, tx); err != nil {
+		t.Fatalf("InsertTransactionIfMissing() duplicate error = %v", err)
+	}
+
+	all, err := db.ListAllTransactions(ctx, wallet, 10, 0)
+	if err != nil {
+		t.Fatalf("ListAllTransactions() error = %v", err)
+	}
+	if len(all) != 1 {
+		t.Fatalf("expected 1 transaction after duplicate inserts, got %d", len(all))
+	}
+}
+
+func TestUpdateTransactionState(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	wallet := "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	tx := TransactionRecord{
+		WalletAddress: wallet,
+		TxHash:        "0xstatehash",
+		FromAddress:   wallet,
+		TokenSymbol:   "ETH",
+		Amount:        "0.5",
+		Network:       "ethereum-sepolia",
+		State:         "pending",
+	}
+	if err := db.InsertTransaction(ctx, tx); err != nil {
+		t.Fatalf("InsertTransaction() error = %v", err)
+	}
+
+	if err := db.UpdateTransactionState(ctx, "0xstatehash", "completed"); err != nil {
+		t.Fatalf("UpdateTransactionState() error = %v", err)
+	}
+
+	rows, err := db.ListAllTransactions(ctx, wallet, 10, 0)
+	if err != nil {
+		t.Fatalf("ListAllTransactions() error = %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if rows[0].State != "completed" {
+		t.Fatalf("expected state 'completed', got %q", rows[0].State)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Balance history
+// ---------------------------------------------------------------------------
+
+func TestInsertAndListBalanceHistory(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	wallet := "0xcccccccccccccccccccccccccccccccccccccccc"
+
+	snap := BalanceHistory{
+		WalletAddress: wallet,
+		Network:       "ethereum-sepolia",
+		TokenAddress:  "native",
+		TokenSymbol:   "ETH",
+		Balance:       "1.5",
+		USDValue:      "3000.00",
+		FetchedAt:     1700000000,
+	}
+
+	if err := db.InsertBalanceHistory(ctx, snap); err != nil {
+		t.Fatalf("InsertBalanceHistory() error = %v", err)
+	}
+
+	history, err := db.ListBalanceHistory(ctx, wallet, "ethereum-sepolia", 10)
+	if err != nil {
+		t.Fatalf("ListBalanceHistory() error = %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected 1 snapshot, got %d", len(history))
+	}
+	if history[0].TokenSymbol != "ETH" {
+		t.Fatalf("unexpected token symbol: %s", history[0].TokenSymbol)
+	}
+	if history[0].Balance != "1.5" {
+		t.Fatalf("unexpected balance: %s", history[0].Balance)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Watched addresses
+// ---------------------------------------------------------------------------
+
+func TestInsertAndListWatchedAddresses(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	if err := db.InsertWatchedAddress(ctx, "0xdeadbeefdeadbeefdeadbeefdeadbeef00000001", "Alice"); err != nil {
+		t.Fatalf("InsertWatchedAddress() error = %v", err)
+	}
+	if err := db.InsertWatchedAddress(ctx, "0xdeadbeefdeadbeefdeadbeefdeadbeef00000002", ""); err != nil {
+		t.Fatalf("InsertWatchedAddress() (no label) error = %v", err)
+	}
+
+	watched, err := db.ListWatchedAddresses(ctx)
+	if err != nil {
+		t.Fatalf("ListWatchedAddresses() error = %v", err)
+	}
+	if len(watched) != 2 {
+		t.Fatalf("expected 2 watched addresses, got %d", len(watched))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// FX rates
+// ---------------------------------------------------------------------------
+
+func TestUpsertAndLatestFXRate(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	if err := db.UpsertFXRate(ctx, "USD/ZAR", "18.50", 1000); err != nil {
+		t.Fatalf("UpsertFXRate() error = %v", err)
+	}
+	if err := db.UpsertFXRate(ctx, "USD/ZAR", "18.75", 2000); err != nil {
+		t.Fatalf("UpsertFXRate() update error = %v", err)
+	}
+
+	rate, err := db.LatestFXRate(ctx, "USD/ZAR")
+	if err != nil {
+		t.Fatalf("LatestFXRate() error = %v", err)
+	}
+	if rate.Rate != "18.75" {
+		t.Fatalf("expected rate 18.75, got %s", rate.Rate)
 	}
 }

@@ -1,90 +1,260 @@
 package routes
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/mindsgn-studio/pocket-money-app/core/cmd/api/store"
 	"github.com/mindsgn-studio/pocket-money-app/core/cmd/api/types"
 )
 
-func TestNewAPIRequiresStore(t *testing.T) {
-	var apiStore store.APIDatabase
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+type successEnvelope[T any] struct {
+	Data T `json:"data"`
+}
+
+func performJSONRequest(t *testing.T, handler http.HandlerFunc, method, path string, body any, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	var payload []byte
+	var err error
+	if body != nil {
+		if payload, err = json.Marshal(body); err != nil {
+			t.Fatalf("failed to marshal body: %v", err)
+		}
+	}
+	req := httptest.NewRequest(method, path, bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	rec := httptest.NewRecorder()
+	handler(rec, req)
+	return rec
+}
+
+func decodeSuccess[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
+	t.Helper()
+	var env successEnvelope[T]
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode success body: %v", err)
+	}
+	return env.Data
+}
+
+// newMongoAPIForTest skips the test if POCKET_TEST_MONGO_URI is not set and
+// connects to a unique test database that is cleaned up after the test.
+func newMongoAPIForTest(t *testing.T) *API {
+	t.Helper()
+	mongoURI := strings.TrimSpace(os.Getenv("POCKET_TEST_MONGO_URI"))
+	if mongoURI == "" {
+		t.Skip("POCKET_TEST_MONGO_URI not set; skipping MongoDB integration test")
+	}
+	dbName := "pocket_routes_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	apiStore, err := store.NewMongoAPIDatabase(ctx, mongoURI, dbName)
+	if err != nil {
+		t.Fatalf("failed to init mongo store: %v", err)
+	}
+	t.Cleanup(func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+		_ = apiStore.Close(shutdownCtx)
+	})
+
 	api, err := NewAPI(apiStore)
+	if err != nil {
+		t.Fatalf("failed to init API: %v", err)
+	}
+	return api
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests (no MongoDB required)
+// ---------------------------------------------------------------------------
+
+func TestNewAPIRequiresStore(t *testing.T) {
+	api, err := NewAPI(nil)
 	if err == nil {
-		t.Fatalf("expected error when store is nil")
+		t.Fatal("expected error when store is nil")
 	}
 	if api != nil {
-		t.Fatalf("expected nil api when store is nil")
+		t.Fatal("expected nil API when store is nil")
 	}
 }
 
-func TestReserveIdempotencyKeyMissing(t *testing.T) {
-	api := &API{idempotencySeen: make(map[string]int64)}
-	req := httptest.NewRequest(http.MethodPost, "/v1/payments/send-email", nil)
-	rec := httptest.NewRecorder()
-
-	ok := api.reserveIdempotencyKey(rec, req, "payments_send_email")
-	if ok {
-		t.Fatalf("expected false when idempotency key is missing")
+func TestHealthHandler(t *testing.T) {
+	api, err := NewAPI(&stubStore{})
+	if err != nil {
+		t.Fatalf("NewAPI() error = %v", err)
 	}
+
+	rec := performJSONRequest(t, api.Health(), http.MethodGet, "/health", nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	data := decodeSuccess[types.HealthResponse](t, rec)
+	if !data.OK {
+		t.Fatal("expected ok=true in health response")
+	}
+}
+
+func TestHealthHandlerMethodNotAllowed(t *testing.T) {
+	api, _ := NewAPI(&stubStore{})
+	rec := performJSONRequest(t, api.Health(), http.MethodPost, "/health", nil, nil)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rec.Code)
+	}
+}
+
+func TestSaveWalletMissingFields(t *testing.T) {
+	api, _ := NewAPI(&stubStore{})
+	rec := performJSONRequest(t, api.SaveWallet(), http.MethodPost, "/v1/wallets", map[string]string{"address": ""}, nil)
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
-func TestReserveIdempotencyKeyDuplicate(t *testing.T) {
-	api := &API{idempotencySeen: make(map[string]int64)}
-
-	req1 := httptest.NewRequest(http.MethodPost, "/v1/payments/send-email", nil)
-	req1.Header.Set("Idempotency-Key", "abc123")
-	req1.Header.Set("X-API-Key", "test-key")
-	rec1 := httptest.NewRecorder()
-
-	if !api.reserveIdempotencyKey(rec1, req1, "payments_send_email") {
-		t.Fatalf("expected first idempotency key reservation to succeed")
-	}
-
-	req2 := httptest.NewRequest(http.MethodPost, "/v1/payments/send-email", nil)
-	req2.Header.Set("Idempotency-Key", "abc123")
-	req2.Header.Set("X-API-Key", "test-key")
-	rec2 := httptest.NewRecorder()
-
-	ok := api.reserveIdempotencyKey(rec2, req2, "payments_send_email")
-	if ok {
-		t.Fatalf("expected duplicate idempotency key reservation to fail")
-	}
-	if rec2.Code != http.StatusConflict {
-		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec2.Code)
+func TestGetBalancesMissingAddress(t *testing.T) {
+	api, _ := NewAPI(&stubStore{})
+	rec := performJSONRequest(t, api.GetBalances(), http.MethodGet, "/v1/balances", nil, nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
-func TestWriteMappedErrorAA23Contract(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/v1/aa/send-sponsored", nil)
-	rec := httptest.NewRecorder()
-
-	sourceErr := errors.New("AA23 reverted")
-	writeMappedError(rec, req, sourceErr)
-
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
-	}
-
-	var payload types.APIErrorResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("failed to decode response body: %v", err)
-	}
-
-	if payload.Error.Code != "aa23_reverted" {
-		t.Fatalf("expected error code aa23_reverted, got %s", payload.Error.Code)
-	}
-	if payload.Error.Message != sourceErr.Error() {
-		t.Fatalf("expected error message %q, got %q", sourceErr.Error(), payload.Error.Message)
-	}
-	if payload.Error.Retryable {
-		t.Fatalf("expected retryable=false, got true")
+func TestListTransactionsMissingAddress(t *testing.T) {
+	api, _ := NewAPI(&stubStore{})
+	rec := performJSONRequest(t, api.ListTransactions(), http.MethodGet, "/v1/transactions", nil, nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestListTransactionsInvalidDirection(t *testing.T) {
+	api, _ := NewAPI(&stubStore{})
+	rec := performJSONRequest(t, api.ListTransactions(), http.MethodGet, "/v1/transactions?address=0x1&direction=unknown", nil, nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGetLatestFXMissingPair(t *testing.T) {
+	api, _ := NewAPI(&stubStore{})
+	rec := performJSONRequest(t, api.GetLatestFX(), http.MethodGet, "/v1/fx/latest", nil, nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGetLatestFXNotFound(t *testing.T) {
+	api, _ := NewAPI(&stubStore{})
+	rec := performJSONRequest(t, api.GetLatestFX(), http.MethodGet, "/v1/fx/latest?pair=USD/XYZ", nil, nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// MongoDB integration tests
+// ---------------------------------------------------------------------------
+
+func TestSaveAndListWalletsIntegration(t *testing.T) {
+	api := newMongoAPIForTest(t)
+
+	saveRec := performJSONRequest(t, api.SaveWallet(), http.MethodPost, "/v1/wallets", map[string]string{
+		"address": "0x000000000000000000000000000000000000dEaD",
+		"network": "ethereum-sepolia",
+	}, nil)
+	if saveRec.Code != http.StatusCreated {
+		t.Fatalf("save wallet expected 201, got %d body=%s", saveRec.Code, saveRec.Body.String())
+	}
+
+	listRec := performJSONRequest(t, api.GetWallets(), http.MethodGet, "/v1/wallets/", nil, nil)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list wallets expected 200, got %d body=%s", listRec.Code, listRec.Body.String())
+	}
+
+	data := decodeSuccess[types.WalletListResponse](t, listRec)
+	if len(data.Wallets) != 1 {
+		t.Fatalf("expected 1 wallet, got %d", len(data.Wallets))
+	}
+	if data.Wallets[0].Network != "ethereum-sepolia" {
+		t.Fatalf("unexpected network: %s", data.Wallets[0].Network)
+	}
+}
+
+func TestListTransactionsEmptyIntegration(t *testing.T) {
+	api := newMongoAPIForTest(t)
+
+	rec := performJSONRequest(t, api.ListTransactions(), http.MethodGet,
+		"/v1/transactions?address=0x000000000000000000000000000000000000dEaD", nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	data := decodeSuccess[types.TransactionListResponse](t, rec)
+	if data.Total != 0 {
+		t.Fatalf("expected 0 transactions, got %d", data.Total)
+	}
+}
+
+func TestGetLatestFXIntegration(t *testing.T) {
+	api := newMongoAPIForTest(t)
+
+	// Manually upsert via the store adapter inside the API
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = api.store.UpsertFXRate(ctx, "USD/ZAR", "18.50", time.Now().Unix())
+
+	rec := performJSONRequest(t, api.GetLatestFX(), http.MethodGet, "/v1/fx/latest?pair=USD/ZAR", nil, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	data := decodeSuccess[types.FXLatestResponse](t, rec)
+	if data.Rate != "18.50" {
+		t.Fatalf("expected rate 18.50, got %s", data.Rate)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Stub store for unit tests
+// ---------------------------------------------------------------------------
+
+type stubStore struct{}
+
+func (s *stubStore) SaveWallet(ctx context.Context, w store.WalletRecord) error { return nil }
+func (s *stubStore) ListWallets(ctx context.Context) ([]store.WalletRecord, error) {
+	return nil, nil
+}
+func (s *stubStore) ListWalletAddresses(ctx context.Context) ([]string, error)        { return nil, nil }
+func (s *stubStore) UpsertBalance(ctx context.Context, b store.BalanceSnapshot) error { return nil }
+func (s *stubStore) GetLatestBalances(ctx context.Context, address, network string) ([]store.BalanceSnapshot, error) {
+	return nil, nil
+}
+func (s *stubStore) UpsertTransaction(ctx context.Context, t store.TransactionItem) error {
+	return nil
+}
+func (s *stubStore) ListTransactions(ctx context.Context, address, direction string, limit, offset int) ([]store.TransactionItem, int64, error) {
+	return nil, 0, nil
+}
+func (s *stubStore) UpsertFXRate(ctx context.Context, pair, rate string, fetchedAt int64) error {
+	return nil
+}
+func (s *stubStore) LatestFXRate(ctx context.Context, pair string) (*store.FXRate, error) {
+	return nil, store.ErrNotFound
+}
+func (s *stubStore) Close(ctx context.Context) error { return nil }

@@ -13,7 +13,7 @@
 3. Why now?
 Traditional bank transfers can be slow/expensive. Stablecoin rails can move value faster while we keep the UX local and simple.
 
-4. We are intentionally shipping MVP v1 without smart accounts first. Reliability and user trust come before advanced infra.
+4. MVP v1 focuses on a simple, reliable wallet experience to build user trust.
 
 5. We are running a private beta on Sepolia while we harden security and flows.
 
@@ -28,7 +28,7 @@ If you want in, DM me with "Pocket Beta".
 
 ## Short Post Option C
 
-We paused smart-account complexity to ship a safer MVP faster.
+We are shipping a focused MVP to move quickly and safely.
 EOA-first now. Better UX now. Real user feedback now.
 
 If you are in SA and want to test Pocket Money, reach out.

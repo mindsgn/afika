@@ -22,6 +22,7 @@ export type PocketApi = {
 
   // Signing
   signMessage(message: string): Promise<string>;
+  exportPrivateKey(): Promise<string>;
 
   // Balances (live network calls)
   getTokenBalance(networkName: string, tokenIdentifier: string): Promise<string>;
@@ -36,6 +37,7 @@ export type PocketApi = {
 
   // Token transfers
   sendToken(networkName: string, tokenIdentifier: string, recipient: string, amount: string): Promise<string>;
+  sendUSDC(networkName: string, recipient: string, amount: string): Promise<string>;
 
   // Transactions
   syncInboundTransactions(networkName: string): Promise<string>;

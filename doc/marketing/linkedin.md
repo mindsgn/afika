@@ -16,7 +16,7 @@ What MVP v1 does:
 Technical direction:
 - Expo/React Native app + Go/gomobile core.
 - Sepolia private beta first.
-- We deliberately paused smart-account complexity for MVP to prioritize reliability, security, and UX quality.
+- We kept the MVP focused to prioritize reliability, security, and UX quality.
 
 Why this matters in South Africa:
 - Faster value movement can help freelancers, small businesses, and families dealing with costly transfer friction.

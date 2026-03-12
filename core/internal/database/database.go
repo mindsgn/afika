@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"math/big"
 	"path/filepath"
 	"strings"
 	"time"
@@ -17,19 +16,16 @@ import (
 	_ "github.com/mutecomm/go-sqlcipher/v4"
 )
 
-/*
-The mobile layer (Swift / Kotlin) MUST implement this interface and provide
-secure storage backed by iOS Keychain / Android Keystore.
-*/
-
+// SecureKeyStore must be implemented by the platform layer (iOS Keychain /
+// Android Keystore) to supply a durable master key and KDF salt.
 type SecureKeyStore interface {
-	// Returns a persistent, random 32-byte master key.
-	// The OS should protect and gate access (biometrics / device lock).
 	GetOrCreateMasterKey(ctx context.Context) ([]byte, error)
-
-	// Returns a stable random salt (at least 16 bytes) for KDF.
 	GetOrCreateKDFSalt(ctx context.Context) ([]byte, error)
 }
+
+// ---------------------------------------------------------------------------
+// Domain types
+// ---------------------------------------------------------------------------
 
 type Wallet struct {
 	UUID       string
@@ -46,287 +42,145 @@ type WalletSecret struct {
 	PrivateKey []byte
 }
 
-type BalanceHistory struct {
-	UUID      string
-	ZAR       string
-	USD       string
-	EURO      string
-	CreatedAt int64
-}
-
 type TransactionRecord struct {
-	UUID            string
-	TxHash          string
-	UserOpHash      string
-	Nonce           int64
-	Chain           string
-	EntryPoint      string
-	Token           string
-	TokenAddress    string
-	TokenDecimals   int
-	NativeToken     bool
-	Amount          string
-	TransactionType string
-	State           string
-	BundlerStatus   string
-	TxMode          string
-	SponsorshipMode string
-	Note            string
-	Source          string
-	Destination     string
-	ProviderID      string
-	WalletAddress   string
-	Counterparty    string
-	CreatedAt       int64
-	UpdatedAt       int64
-}
-
-type SmartAccountRecord struct {
-	UUID         string
-	OwnerAddress string
-	Network      string
-	Address      string
-	CreatedAt    int64
-	UpdatedAt    int64
-}
-
-type SponsoredOperation struct {
-	UUID            string
-	UserOperationID string
-	SenderAddress   string
-	Network         string
-	TokenAddress    string
-	Recipient       string
-	AmountUnits     string
-	Status          string
-	BundlerTxHash   string
-	CreatedAt       int64
-	UpdatedAt       int64
-}
-
-type PaymasterValidation struct {
-	UUID            string
-	SenderAddress   string
-	Decision        string
-	RejectionReason string
-	AmountUnits     string
-	Metadata        string
-	CreatedAt       int64
-}
-
-type User struct {
-	UUID      string
-	Email     string
-	Address   string
-	CreatedAt int64
-}
-
-type EmailTransfer struct {
 	UUID          string
-	FromEmail     string
-	ToEmail       string
-	AmountUSDC    string
-	Status        string
-	OnchainTxHash string
+	WalletAddress string
+	TxHash        string
+	FromAddress   string
+	ToAddress     string
+	TokenAddress  string
+	TokenSymbol   string
+	Amount        string
+	FeeETH        string
+	FeeUSD        string
+	USDAmount     string
+	Network       string
+	TxMode        string
+	State         string
+	BlockNumber   uint64
+	Timestamp     int64
 	CreatedAt     int64
-	UpdatedAt     int64
 }
 
-type AddressEvent struct {
+type BalanceHistory struct {
+	UUID          string
+	WalletAddress string
+	Network       string
+	TokenAddress  string
+	TokenSymbol   string
+	Balance       string
+	USDValue      string
+	FetchedAt     int64
+}
+
+type WatchedAddress struct {
 	UUID      string
 	Address   string
-	Chain     string
-	Token     string
-	Amount    string
-	TxHash    string
-	Direction string
-	Timestamp int64
+	Label     string
 	CreatedAt int64
 }
 
 type FXRate struct {
-	UUID      string
 	Pair      string
 	Rate      string
 	FetchedAt int64
 }
 
+// ---------------------------------------------------------------------------
+// DB handle
+// ---------------------------------------------------------------------------
+
 type DB struct {
-	db *sql.DB
+	sql *sql.DB
 }
 
-const dbFileName = "wallet.db"
-
-// ---------- Public API ----------
-
-func Open(
-	ctx context.Context,
-	dataDir string,
-	userPassword string,
-	keystore SecureKeyStore,
-) (*DB, error) {
-
-	if keystore == nil {
-		return nil, errors.New("keystore is required")
+// Open opens (or creates) the encrypted SQLite database at dir/pocket.db.
+func Open(ctx context.Context, dir string, keyStore SecureKeyStore) (*DB, error) {
+	if keyStore == nil {
+		return nil, errors.New("keyStore is required")
 	}
-
-	masterKey, err := keystore.GetOrCreateMasterKey(ctx)
+	masterKey, err := keyStore.GetOrCreateMasterKey(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("master key: %w", err)
 	}
-
-	salt, err := keystore.GetOrCreateKDFSalt(ctx)
+	salt, err := keyStore.GetOrCreateKDFSalt(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("kdf salt: %w", err)
 	}
 
-	derivedKey := deriveDBKey(userPassword, masterKey, salt)
+	dbKey := deriveDBKey("pocket-db", masterKey, salt)
+	defer zero(dbKey)
 
-	dsn := fmt.Sprintf(
-		"%s?_pragma_key=x'%s'",
-		filepath.Join(dataDir, dbFileName),
-		hex(derivedKey),
-	)
+	dbPath := filepath.Join(dir, "pocket.db")
+	hexKey := hexEncode(dbKey)
+	dsn := fmt.Sprintf("%s?_pragma_key=x'%s'&_pragma_cipher_page_size=4096", dbPath, hexKey)
+	zero([]byte(hexKey))
 
-	db, err := sql.Open("sqlite3", dsn)
+	rawDB, err := sql.Open("sqlite3", dsn)
 	if err != nil {
-		zero(derivedKey)
+		return nil, fmt.Errorf("open db: %w", err)
+	}
+	rawDB.SetMaxOpenConns(1)
+
+	if err := hardenDatabase(ctx, rawDB); err != nil {
+		rawDB.Close()
 		return nil, err
 	}
-
-	if err := hardenDatabase(ctx, db); err != nil {
-		db.Close()
-		zero(derivedKey)
+	if err := verifyKey(ctx, rawDB); err != nil {
+		rawDB.Close()
+		return nil, fmt.Errorf("wrong key or corrupt db: %w", err)
+	}
+	if err := createSchema(ctx, rawDB); err != nil {
+		rawDB.Close()
 		return nil, err
 	}
-
-	if err := verifyKey(ctx, db); err != nil {
-		db.Close()
-		zero(derivedKey)
-		return nil, err
-	}
-
-	if err := createSchema(ctx, db); err != nil {
-		db.Close()
-		zero(derivedKey)
-		return nil, err
-	}
-
-	zero(derivedKey)
-
-	return &DB{db: db}, nil
+	return &DB{sql: rawDB}, nil
 }
 
-func (d *DB) Close() error {
-	if d.db == nil {
-		return nil
+func (d *DB) Close() error { return d.sql.Close() }
+
+// ---------------------------------------------------------------------------
+// Wallet methods
+// ---------------------------------------------------------------------------
+
+func (d *DB) InsertWallet(ctx context.Context, name, walletType, address string, privateKey []byte) error {
+	if d == nil || d.sql == nil {
+		return errors.New("database not open")
 	}
-	return d.db.Close()
+	id := newID()
+	now := time.Now().UnixMilli()
+	_, err := d.sql.ExecContext(ctx, `
+		INSERT INTO wallet (uuid, name, wallet_type, address, private_key, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, name, walletType, strings.ToLower(address), privateKey, now, now)
+	return err
 }
 
-func (d *DB) InsertWallet(
-	ctx context.Context,
-	walletType string,
-	name string,
-	address string,
-	encryptedPrivateKey []byte,
-) error {
-	if d == nil || d.db == nil {
-		return errors.New("database is not initialized")
-	}
-	if walletType == "" {
-		return errors.New("wallet type is required")
-	}
-	if name == "" {
-		return errors.New("wallet name is required")
-	}
-	if address == "" {
-		return errors.New("wallet address is required")
-	}
-	if len(encryptedPrivateKey) == 0 {
-		return errors.New("encrypted private key is required")
-	}
-
-	const q = `
-	INSERT INTO wallet (
-		uuid, name, type, address, private_key, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?);
-	`
-
-	now := time.Now().Unix()
-	uuid := newID()
-
-	stmt, err := d.db.PrepareContext(ctx, q)
+func (d *DB) InsertWalletIfMissing(ctx context.Context, name, walletType, address string, privateKey []byte) error {
+	exists, err := d.WalletExists(ctx)
 	if err != nil {
 		return err
 	}
-	defer stmt.Close()
-
-	_, err = stmt.ExecContext(
-		ctx,
-		uuid,
-		name,
-		walletType,
-		address,
-		base64.StdEncoding.EncodeToString(encryptedPrivateKey),
-		now,
-		now,
-	)
-
-	return err
-}
-
-func (d *DB) InsertWalletIfMissing(
-	ctx context.Context,
-	walletType string,
-	name string,
-	address string,
-	encryptedPrivateKey []byte,
-) error {
-	err := d.InsertWallet(ctx, walletType, name, address, encryptedPrivateKey)
-	if err == nil {
+	if exists {
 		return nil
 	}
-	if strings.Contains(strings.ToLower(err.Error()), "unique") {
-		return nil
-	}
-	return err
+	return d.InsertWallet(ctx, name, walletType, address, privateKey)
 }
 
 func (d *DB) WalletExists(ctx context.Context) (bool, error) {
-	if d == nil || d.db == nil {
-		return false, errors.New("database is not initialized")
-	}
-
-	const q = `SELECT COUNT(*) FROM wallet;`
-
-	var c int
-	if err := d.db.QueryRowContext(ctx, q).Scan(&c); err != nil {
-		return false, err
-	}
-
-	return c > 0, nil
+	var n int
+	err := d.sql.QueryRowContext(ctx, `SELECT COUNT(*) FROM wallet`).Scan(&n)
+	return n > 0, err
 }
 
 func (d *DB) ListWallets(ctx context.Context) ([]Wallet, error) {
-	if d == nil || d.db == nil {
-		return nil, errors.New("database is not initialized")
-	}
-
-	const q = `
-	SELECT uuid, name, type, address
-	FROM wallet
-	ORDER BY created_at ASC;
-	`
-
-	rows, err := d.db.QueryContext(ctx, q)
+	rows, err := d.sql.QueryContext(ctx, `
+		SELECT uuid, name, wallet_type, address FROM wallet ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	var out []Wallet
-
 	for rows.Next() {
 		var w Wallet
 		if err := rows.Scan(&w.UUID, &w.Name, &w.WalletType, &w.Address); err != nil {
@@ -334,316 +188,121 @@ func (d *DB) ListWallets(ctx context.Context) ([]Wallet, error) {
 		}
 		out = append(out, w)
 	}
-
 	return out, rows.Err()
 }
 
 func (d *DB) ListWalletSecrets(ctx context.Context) ([]WalletSecret, error) {
-	if d == nil || d.db == nil {
-		return nil, errors.New("database is not initialized")
-	}
-
-	const q = `
-	SELECT uuid, name, type, address, private_key
-	FROM wallet
-	ORDER BY created_at ASC;
-	`
-
-	rows, err := d.db.QueryContext(ctx, q)
+	rows, err := d.sql.QueryContext(ctx, `
+		SELECT uuid, name, wallet_type, address, private_key FROM wallet ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	var out []WalletSecret
 	for rows.Next() {
 		var w WalletSecret
-		var privateKeyB64 string
-		if err := rows.Scan(&w.UUID, &w.Name, &w.WalletType, &w.Address, &privateKeyB64); err != nil {
+		if err := rows.Scan(&w.UUID, &w.Name, &w.WalletType, &w.Address, &w.PrivateKey); err != nil {
 			return nil, err
 		}
-
-		privateKey, err := base64.StdEncoding.DecodeString(privateKeyB64)
-		if err != nil {
-			return nil, err
-		}
-
-		w.PrivateKey = privateKey
 		out = append(out, w)
 	}
-
 	return out, rows.Err()
 }
 
 func (d *DB) FindWalletSecretByAddress(ctx context.Context, address string) (*WalletSecret, error) {
-	if d == nil || d.db == nil {
-		return nil, errors.New("database is not initialized")
+	var w WalletSecret
+	err := d.sql.QueryRowContext(ctx,
+		`SELECT uuid, name, wallet_type, address, private_key FROM wallet WHERE address = ? LIMIT 1`,
+		strings.ToLower(address)).Scan(&w.UUID, &w.Name, &w.WalletType, &w.Address, &w.PrivateKey)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
 	}
-	if address == "" {
-		return nil, errors.New("wallet address is required")
-	}
-
-	const q = `
-	SELECT uuid, name, type, address, private_key
-	FROM wallet
-	WHERE address = ?
-	LIMIT 1;
-	`
-
-	var out WalletSecret
-	var privateKeyB64 string
-	err := d.db.QueryRowContext(ctx, q, address).Scan(&out.UUID, &out.Name, &out.WalletType, &out.Address, &privateKeyB64)
 	if err != nil {
 		return nil, err
 	}
-
-	privateKey, err := base64.StdEncoding.DecodeString(privateKeyB64)
-	if err != nil {
-		return nil, err
-	}
-	out.PrivateKey = privateKey
-
-	return &out, nil
+	return &w, nil
 }
 
+// ---------------------------------------------------------------------------
+// Transaction methods
+// ---------------------------------------------------------------------------
+
 func (d *DB) InsertTransaction(ctx context.Context, tx TransactionRecord) error {
-	if d == nil || d.db == nil {
-		return errors.New("database is not initialized")
-	}
-	if tx.TxHash == "" {
-		return errors.New("transaction hash is required")
-	}
-	if tx.Token == "" {
-		return errors.New("token is required")
-	}
-
-	const q = `
-	INSERT INTO transactions (
-		uuid, tx_hash, nonce, chain, token, amount, tx_type, state,
-		user_op_hash, entry_point_address, bundler_status, tx_mode, sponsorship_mode,
-		token_address, token_decimals, is_native_token,
-		note, source, destination, provider_id, wallet_address,
-		counterparty_address, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-	`
-
-	now := time.Now().Unix()
 	if tx.UUID == "" {
 		tx.UUID = newID()
 	}
 	if tx.CreatedAt == 0 {
-		tx.CreatedAt = now
+		tx.CreatedAt = time.Now().UnixMilli()
 	}
-	if tx.UpdatedAt == 0 {
-		tx.UpdatedAt = now
-	}
-
-	stmt, err := d.db.PrepareContext(ctx, q)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	_, err = stmt.ExecContext(
-		ctx,
-		tx.UUID,
-		tx.TxHash,
-		tx.Nonce,
-		tx.Chain,
-		tx.Token,
-		tx.Amount,
-		tx.TransactionType,
-		tx.State,
-		tx.UserOpHash,
-		tx.EntryPoint,
-		tx.BundlerStatus,
-		tx.TxMode,
-		tx.SponsorshipMode,
-		tx.TokenAddress,
-		tx.TokenDecimals,
-		tx.NativeToken,
-		tx.Note,
-		tx.Source,
-		tx.Destination,
-		tx.ProviderID,
-		tx.WalletAddress,
-		tx.Counterparty,
-		tx.CreatedAt,
-		tx.UpdatedAt,
-	)
-
+	_, err := d.sql.ExecContext(ctx, `
+		INSERT OR IGNORE INTO transactions (
+			uuid, wallet_address, tx_hash, from_address, to_address,
+			token_address, token_symbol, amount, fee_eth, fee_usd, usd_amount,
+			network, tx_mode, state, block_number, timestamp, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		tx.UUID, strings.ToLower(tx.WalletAddress), tx.TxHash,
+		strings.ToLower(tx.FromAddress), strings.ToLower(tx.ToAddress),
+		strings.ToLower(tx.TokenAddress), tx.TokenSymbol, tx.Amount,
+		tx.FeeETH, tx.FeeUSD, tx.USDAmount, tx.Network, tx.TxMode, tx.State,
+		tx.BlockNumber, tx.Timestamp, tx.CreatedAt)
 	return err
-}
-
-func (d *DB) UpsertSmartAccount(ctx context.Context, ownerAddress string, network string, accountAddress string) error {
-	if d == nil || d.db == nil {
-		return errors.New("database is not initialized")
-	}
-	ownerAddress = strings.TrimSpace(ownerAddress)
-	network = strings.TrimSpace(network)
-	accountAddress = strings.TrimSpace(accountAddress)
-	if ownerAddress == "" {
-		return errors.New("owner address is required")
-	}
-	if network == "" {
-		return errors.New("network is required")
-	}
-	if accountAddress == "" {
-		return errors.New("smart account address is required")
-	}
-
-	const q = `
-	INSERT INTO smart_accounts (
-		uuid, owner_address, network, account_address, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?)
-	ON CONFLICT(owner_address, network)
-	DO UPDATE SET account_address = excluded.account_address, updated_at = excluded.updated_at;
-	`
-
-	now := time.Now().Unix()
-	_, err := d.db.ExecContext(ctx, q, newID(), ownerAddress, network, accountAddress, now, now)
-	return err
-}
-
-func (d *DB) FindSmartAccountByOwnerNetwork(ctx context.Context, ownerAddress string, network string) (*SmartAccountRecord, error) {
-	if d == nil || d.db == nil {
-		return nil, errors.New("database is not initialized")
-	}
-	ownerAddress = strings.TrimSpace(ownerAddress)
-	network = strings.TrimSpace(network)
-	if ownerAddress == "" {
-		return nil, errors.New("owner address is required")
-	}
-	if network == "" {
-		return nil, errors.New("network is required")
-	}
-
-	const q = `
-	SELECT uuid, owner_address, network, account_address, created_at, updated_at
-	FROM smart_accounts
-	WHERE owner_address = ? AND network = ?
-	LIMIT 1;
-	`
-
-	var out SmartAccountRecord
-	err := d.db.QueryRowContext(ctx, q, ownerAddress, network).Scan(
-		&out.UUID,
-		&out.OwnerAddress,
-		&out.Network,
-		&out.Address,
-		&out.CreatedAt,
-		&out.UpdatedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &out, nil
 }
 
 func (d *DB) InsertTransactionIfMissing(ctx context.Context, tx TransactionRecord) error {
-	err := d.InsertTransaction(ctx, tx)
-	if err == nil {
-		return nil
-	}
-	if strings.Contains(strings.ToLower(err.Error()), "unique") {
-		return nil
-	}
+	return d.InsertTransaction(ctx, tx)
+}
+
+func (d *DB) UpdateTransactionState(ctx context.Context, txHash string, state string) error {
+	_, err := d.sql.ExecContext(ctx,
+		`UPDATE transactions SET state = ? WHERE tx_hash = ?`, state, txHash)
 	return err
 }
 
-func (d *DB) InsertUserIfMissing(ctx context.Context, email, address string) error {
-	if d == nil || d.db == nil {
-		return errors.New("database is not initialized")
+func (d *DB) ListTransactions(ctx context.Context, walletAddress string, token string, limit int, offset int) ([]TransactionRecord, error) {
+	query := `SELECT uuid, wallet_address, tx_hash, from_address, to_address,
+		token_address, token_symbol, amount, fee_eth, fee_usd, usd_amount,
+		network, tx_mode, state, block_number, timestamp, created_at
+		FROM transactions WHERE wallet_address = ?`
+	args := []any{strings.ToLower(walletAddress)}
+	if token != "" {
+		query += ` AND token_address = ?`
+		args = append(args, strings.ToLower(token))
 	}
-	email = strings.TrimSpace(email)
-	address = strings.TrimSpace(address)
-	if email == "" || address == "" {
-		return errors.New("email and address are required")
-	}
-
-	const q = `
-	INSERT INTO users (uuid, email, address, created_at)
-	VALUES (?, ?, ?, ?);
-	`
-	now := time.Now().Unix()
-	_, err := d.db.ExecContext(ctx, q, newID(), email, address, now)
-	if err != nil && strings.Contains(strings.ToLower(err.Error()), "unique") {
-		return nil
-	}
-	return err
-}
-
-func (d *DB) FindUserByEmail(ctx context.Context, email string) (*User, error) {
-	if d == nil || d.db == nil {
-		return nil, errors.New("database is not initialized")
-	}
-	email = strings.TrimSpace(email)
-	if email == "" {
-		return nil, errors.New("email is required")
-	}
-
-	const q = `
-	SELECT uuid, email, address, created_at
-	FROM users
-	WHERE email = ?
-	LIMIT 1;
-	`
-	var u User
-	if err := d.db.QueryRowContext(ctx, q, email).Scan(&u.UUID, &u.Email, &u.Address, &u.CreatedAt); err != nil {
-		return nil, err
-	}
-	return &u, nil
-}
-
-func (d *DB) InsertEmailTransfer(ctx context.Context, t EmailTransfer) error {
-	if d == nil || d.db == nil {
-		return errors.New("database is not initialized")
-	}
-	if t.UUID == "" {
-		t.UUID = newID()
-	}
-	now := time.Now().Unix()
-	if t.CreatedAt == 0 {
-		t.CreatedAt = now
-	}
-	if t.UpdatedAt == 0 {
-		t.UpdatedAt = now
-	}
-	const q = `
-	INSERT INTO email_transfers (
-		uuid, from_email, to_email, amount_usdc, status, onchain_tx_hash, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-	`
-	_, err := d.db.ExecContext(ctx, q, t.UUID, t.FromEmail, t.ToEmail, t.AmountUSDC, t.Status, t.OnchainTxHash, t.CreatedAt, t.UpdatedAt)
-	return err
-}
-
-func (d *DB) ListPendingEmailTransfersForRecipient(ctx context.Context, email string) ([]EmailTransfer, error) {
-	if d == nil || d.db == nil {
-		return nil, errors.New("database is not initialized")
-	}
-	email = strings.TrimSpace(email)
-	if email == "" {
-		return nil, errors.New("email is required")
-	}
-
-	const q = `
-	SELECT uuid, from_email, to_email, amount_usdc, status, onchain_tx_hash, created_at, updated_at
-	FROM email_transfers
-	WHERE to_email = ? AND status = 'pending'
-	ORDER BY created_at ASC;
-	`
-	rows, err := d.db.QueryContext(ctx, q, email)
+	query += ` ORDER BY timestamp DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := d.sql.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	return scanTransactionRows(rows)
+}
 
-	var out []EmailTransfer
+func (d *DB) ListAllTransactions(ctx context.Context, walletAddress string, limit int, offset int) ([]TransactionRecord, error) {
+	rows, err := d.sql.QueryContext(ctx, `
+		SELECT uuid, wallet_address, tx_hash, from_address, to_address,
+			token_address, token_symbol, amount, fee_eth, fee_usd, usd_amount,
+			network, tx_mode, state, block_number, timestamp, created_at
+		FROM transactions WHERE wallet_address = ?
+		ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
+		strings.ToLower(walletAddress), limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanTransactionRows(rows)
+}
+
+func scanTransactionRows(rows *sql.Rows) ([]TransactionRecord, error) {
+	var out []TransactionRecord
 	for rows.Next() {
-		var t EmailTransfer
-		if err := rows.Scan(&t.UUID, &t.FromEmail, &t.ToEmail, &t.AmountUSDC, &t.Status, &t.OnchainTxHash, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		var t TransactionRecord
+		if err := rows.Scan(
+			&t.UUID, &t.WalletAddress, &t.TxHash, &t.FromAddress, &t.ToAddress,
+			&t.TokenAddress, &t.TokenSymbol, &t.Amount, &t.FeeETH, &t.FeeUSD,
+			&t.USDAmount, &t.Network, &t.TxMode, &t.State, &t.BlockNumber,
+			&t.Timestamp, &t.CreatedAt,
+		); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -651,612 +310,255 @@ func (d *DB) ListPendingEmailTransfersForRecipient(ctx context.Context, email st
 	return out, rows.Err()
 }
 
-func (d *DB) MarkEmailTransfersClaimed(ctx context.Context, email string) error {
-	if d == nil || d.db == nil {
-		return errors.New("database is not initialized")
+// ---------------------------------------------------------------------------
+// Balance history methods
+// ---------------------------------------------------------------------------
+
+func (d *DB) InsertBalanceHistory(ctx context.Context, b BalanceHistory) error {
+	if b.UUID == "" {
+		b.UUID = newID()
 	}
-	email = strings.TrimSpace(email)
-	if email == "" {
-		return errors.New("email is required")
+	if b.FetchedAt == 0 {
+		b.FetchedAt = time.Now().UnixMilli()
 	}
-	const q = `
-	UPDATE email_transfers
-	SET status = 'claimed', updated_at = ?
-	WHERE to_email = ? AND status = 'pending';
-	`
-	_, err := d.db.ExecContext(ctx, q, time.Now().Unix(), email)
+	_, err := d.sql.ExecContext(ctx, `
+		INSERT INTO balance_history (uuid, wallet_address, network, token_address, token_symbol, balance, usd_value, fetched_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		b.UUID, strings.ToLower(b.WalletAddress), b.Network,
+		strings.ToLower(b.TokenAddress), b.TokenSymbol, b.Balance, b.USDValue, b.FetchedAt)
 	return err
 }
 
+func (d *DB) ListBalanceHistory(ctx context.Context, walletAddress string, network string, limit int) ([]BalanceHistory, error) {
+	query := `SELECT uuid, wallet_address, network, token_address, token_symbol, balance, usd_value, fetched_at
+		FROM balance_history WHERE wallet_address = ?`
+	args := []any{strings.ToLower(walletAddress)}
+	if network != "" {
+		query += ` AND network = ?`
+		args = append(args, network)
+	}
+	query += ` ORDER BY fetched_at DESC LIMIT ?`
+	args = append(args, limit)
+	rows, err := d.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []BalanceHistory
+	for rows.Next() {
+		var b BalanceHistory
+		if err := rows.Scan(&b.UUID, &b.WalletAddress, &b.Network, &b.TokenAddress, &b.TokenSymbol, &b.Balance, &b.USDValue, &b.FetchedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// ---------------------------------------------------------------------------
+// Watched address methods
+// ---------------------------------------------------------------------------
+
+func (d *DB) InsertWatchedAddress(ctx context.Context, address, label string) error {
+	_, err := d.sql.ExecContext(ctx,
+		`INSERT OR IGNORE INTO watched_addresses (uuid, address, label, created_at) VALUES (?, ?, ?, ?)`,
+		newID(), strings.ToLower(address), label, time.Now().UnixMilli())
+	return err
+}
+
+func (d *DB) ListWatchedAddresses(ctx context.Context) ([]WatchedAddress, error) {
+	rows, err := d.sql.QueryContext(ctx,
+		`SELECT uuid, address, label, created_at FROM watched_addresses ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WatchedAddress
+	for rows.Next() {
+		var w WatchedAddress
+		if err := rows.Scan(&w.UUID, &w.Address, &w.Label, &w.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
+// ---------------------------------------------------------------------------
+// FX rate methods
+// ---------------------------------------------------------------------------
+
 func (d *DB) UpsertFXRate(ctx context.Context, pair, rate string, fetchedAt int64) error {
-	if d == nil || d.db == nil {
-		return errors.New("database is not initialized")
-	}
-	pair = strings.TrimSpace(pair)
-	rate = strings.TrimSpace(rate)
-	if pair == "" || rate == "" {
-		return errors.New("pair and rate are required")
-	}
-	if fetchedAt == 0 {
-		fetchedAt = time.Now().Unix()
-	}
-	const q = `
-	INSERT INTO fx_rates (uuid, pair, rate, fetched_at)
-	VALUES (?, ?, ?, ?);
-	`
-	_, err := d.db.ExecContext(ctx, q, newID(), pair, rate, fetchedAt)
+	_, err := d.sql.ExecContext(ctx,
+		`INSERT INTO fx_rates (pair, rate, fetched_at) VALUES (?, ?, ?)
+		 ON CONFLICT(pair) DO UPDATE SET rate = excluded.rate, fetched_at = excluded.fetched_at`,
+		pair, rate, fetchedAt)
 	return err
 }
 
 func (d *DB) LatestFXRate(ctx context.Context, pair string) (*FXRate, error) {
-	if d == nil || d.db == nil {
-		return nil, errors.New("database is not initialized")
+	var f FXRate
+	err := d.sql.QueryRowContext(ctx,
+		`SELECT pair, rate, fetched_at FROM fx_rates WHERE pair = ? LIMIT 1`, pair).
+		Scan(&f.Pair, &f.Rate, &f.FetchedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
 	}
-	pair = strings.TrimSpace(pair)
-	if pair == "" {
-		return nil, errors.New("pair is required")
-	}
-	const q = `
-	SELECT uuid, pair, rate, fetched_at
-	FROM fx_rates
-	WHERE pair = ?
-	ORDER BY fetched_at DESC
-	LIMIT 1;
-	`
-	var r FXRate
-	if err := d.db.QueryRowContext(ctx, q, pair).Scan(&r.UUID, &r.Pair, &r.Rate, &r.FetchedAt); err != nil {
+	if err != nil {
 		return nil, err
 	}
-	return &r, nil
+	return &f, nil
 }
 
-func (d *DB) UpdateTransactionState(ctx context.Context, txHash string, state string) error {
-	if d == nil || d.db == nil {
-		return errors.New("database is not initialized")
-	}
-	if txHash == "" {
-		return errors.New("transaction hash is required")
-	}
-
-	const q = `
-	UPDATE transactions
-	SET state = ?, updated_at = ?
-	WHERE tx_hash = ?;
-	`
-
-	_, err := d.db.ExecContext(ctx, q, state, time.Now().Unix(), txHash)
-	return err
-}
-
-func (d *DB) UpdateTransactionSettlement(ctx context.Context, txHash string, state string, bundlerStatus string) error {
-	if d == nil || d.db == nil {
-		return errors.New("database is not initialized")
-	}
-	if strings.TrimSpace(txHash) == "" {
-		return errors.New("transaction hash is required")
-	}
-
-	const q = `
-	UPDATE transactions
-	SET state = ?, bundler_status = ?, updated_at = ?
-	WHERE tx_hash = ?;
-	`
-
-	_, err := d.db.ExecContext(ctx, q, state, bundlerStatus, time.Now().Unix(), txHash)
-	return err
-}
-
-func (d *DB) UpdateUserOperationSettlement(ctx context.Context, userOpHash string, finalTxHash string, state string, bundlerStatus string) error {
-	if d == nil || d.db == nil {
-		return errors.New("database is not initialized")
-	}
-	if strings.TrimSpace(userOpHash) == "" {
-		return errors.New("user operation hash is required")
-	}
-	if strings.TrimSpace(finalTxHash) == "" {
-		return errors.New("final transaction hash is required")
-	}
-
-	now := time.Now().Unix()
-	tx, err := d.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-
-	const updateTransactions = `
-	UPDATE transactions
-	SET tx_hash = ?, state = ?, bundler_status = ?, updated_at = ?
-	WHERE user_op_hash = ?;
-	`
-
-	if _, err = tx.ExecContext(ctx, updateTransactions, finalTxHash, state, bundlerStatus, now, userOpHash); err != nil {
-		return err
-	}
-
-	const updateSponsored = `
-	UPDATE sponsored_operations
-	SET status = ?, bundler_tx_hash = ?, updated_at = ?
-	WHERE user_operation_hash = ?;
-	`
-
-	if _, err = tx.ExecContext(ctx, updateSponsored, bundlerStatus, finalTxHash, now, userOpHash); err != nil {
-		return err
-	}
-
-	err = tx.Commit()
-	return err
-}
-
-func (d *DB) RecordSponsoredOperation(ctx context.Context, item SponsoredOperation) error {
-	if d == nil || d.db == nil {
-		return errors.New("database is not initialized")
-	}
-	if strings.TrimSpace(item.UserOperationID) == "" {
-		return errors.New("user operation hash is required")
-	}
-	if strings.TrimSpace(item.SenderAddress) == "" {
-		return errors.New("sender address is required")
-	}
-
-	now := time.Now().Unix()
-	if item.UUID == "" {
-		item.UUID = newID()
-	}
-	if item.CreatedAt == 0 {
-		item.CreatedAt = now
-	}
-	item.UpdatedAt = now
-
-	const q = `
-	INSERT INTO sponsored_operations (
-		uuid, user_operation_hash, sender_address, network, token_address,
-		recipient_address, amount_units, status, bundler_tx_hash, created_at, updated_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	ON CONFLICT(user_operation_hash)
-	DO UPDATE SET
-		status = excluded.status,
-		bundler_tx_hash = excluded.bundler_tx_hash,
-		updated_at = excluded.updated_at;
-	`
-
-	_, err := d.db.ExecContext(
-		ctx,
-		q,
-		item.UUID,
-		item.UserOperationID,
-		item.SenderAddress,
-		item.Network,
-		item.TokenAddress,
-		item.Recipient,
-		item.AmountUnits,
-		item.Status,
-		item.BundlerTxHash,
-		item.CreatedAt,
-		item.UpdatedAt,
-	)
-	return err
-}
-
-func (d *DB) RecordPaymasterValidation(ctx context.Context, item PaymasterValidation) error {
-	if d == nil || d.db == nil {
-		return errors.New("database is not initialized")
-	}
-	if strings.TrimSpace(item.SenderAddress) == "" {
-		return errors.New("sender address is required")
-	}
-	if strings.TrimSpace(item.Decision) == "" {
-		return errors.New("decision is required")
-	}
-
-	now := time.Now().Unix()
-	if item.UUID == "" {
-		item.UUID = newID()
-	}
-	if item.CreatedAt == 0 {
-		item.CreatedAt = now
-	}
-
-	const q = `
-	INSERT INTO paymaster_validations (
-		uuid, sender_address, decision, rejection_reason, amount_units, metadata, created_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?);
-	`
-
-	_, err := d.db.ExecContext(
-		ctx,
-		q,
-		item.UUID,
-		item.SenderAddress,
-		item.Decision,
-		item.RejectionReason,
-		item.AmountUnits,
-		item.Metadata,
-		item.CreatedAt,
-	)
-	return err
-}
-
-func (d *DB) CountSponsoredOperationsToday(ctx context.Context, senderAddress string) (int64, error) {
-	if d == nil || d.db == nil {
-		return 0, errors.New("database is not initialized")
-	}
-	if strings.TrimSpace(senderAddress) == "" {
-		return 0, errors.New("sender address is required")
-	}
-
-	start := time.Now().UTC().Truncate(24 * time.Hour).Unix()
-	const q = `
-	SELECT COUNT(*)
-	FROM sponsored_operations
-	WHERE sender_address = ? AND created_at >= ?;
-	`
-
-	var count int64
-	if err := d.db.QueryRowContext(ctx, q, senderAddress, start).Scan(&count); err != nil {
-		return 0, err
-	}
-
-	return count, nil
-}
-
-func (d *DB) SumSponsoredAmountToday(ctx context.Context, senderAddress string) (*big.Int, error) {
-	if d == nil || d.db == nil {
-		return nil, errors.New("database is not initialized")
-	}
-	if strings.TrimSpace(senderAddress) == "" {
-		return nil, errors.New("sender address is required")
-	}
-
-	start := time.Now().UTC().Truncate(24 * time.Hour).Unix()
-	const q = `
-	SELECT amount_units
-	FROM sponsored_operations
-	WHERE sender_address = ? AND created_at >= ?;
-	`
-
-	rows, err := d.db.QueryContext(ctx, q, senderAddress, start)
+func (d *DB) ListFXRates(ctx context.Context) ([]FXRate, error) {
+	rows, err := d.sql.QueryContext(ctx,
+		`SELECT pair, rate, fetched_at FROM fx_rates ORDER BY pair ASC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
-	total := big.NewInt(0)
+	var out []FXRate
 	for rows.Next() {
-		var value string
-		if err := rows.Scan(&value); err != nil {
+		var f FXRate
+		if err := rows.Scan(&f.Pair, &f.Rate, &f.FetchedAt); err != nil {
 			return nil, err
 		}
-
-		amount := new(big.Int)
-		if _, ok := amount.SetString(strings.TrimSpace(value), 10); !ok {
-			continue
-		}
-		total = total.Add(total, amount)
+		out = append(out, f)
 	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return total, nil
-}
-
-func (d *DB) ListTransactions(ctx context.Context, walletAddress string, token string, limit int, offset int) ([]TransactionRecord, error) {
-	if d == nil || d.db == nil {
-		return nil, errors.New("database is not initialized")
-	}
-	if token == "" {
-		return nil, errors.New("token is required")
-	}
-	if limit <= 0 {
-		limit = 50
-	}
-	if offset < 0 {
-		offset = 0
-	}
-
-	const q = `
-	SELECT uuid, tx_hash, nonce, chain, token, amount, tx_type, state,
-		user_op_hash, entry_point_address, bundler_status, tx_mode, sponsorship_mode,
-		token_address, token_decimals, is_native_token,
-		note, source, destination, provider_id, wallet_address,
-		counterparty_address, created_at, updated_at
-	FROM transactions
-	WHERE wallet_address = ? AND token = ?
-	ORDER BY created_at DESC
-	LIMIT ? OFFSET ?;
-	`
-
-	rows, err := d.db.QueryContext(ctx, q, walletAddress, token, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []TransactionRecord
-	for rows.Next() {
-		var tx TransactionRecord
-		if err := rows.Scan(
-			&tx.UUID,
-			&tx.TxHash,
-			&tx.Nonce,
-			&tx.Chain,
-			&tx.Token,
-			&tx.Amount,
-			&tx.TransactionType,
-			&tx.State,
-			&tx.UserOpHash,
-			&tx.EntryPoint,
-			&tx.BundlerStatus,
-			&tx.TxMode,
-			&tx.SponsorshipMode,
-			&tx.TokenAddress,
-			&tx.TokenDecimals,
-			&tx.NativeToken,
-			&tx.Note,
-			&tx.Source,
-			&tx.Destination,
-			&tx.ProviderID,
-			&tx.WalletAddress,
-			&tx.Counterparty,
-			&tx.CreatedAt,
-			&tx.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		out = append(out, tx)
-	}
-
 	return out, rows.Err()
 }
 
-// ---------- Schema / Hardening ----------
+// ---------------------------------------------------------------------------
+// Schema
+// ---------------------------------------------------------------------------
 
 func createSchema(ctx context.Context, db *sql.DB) error {
-	const q = `
+	const ddl = `
 	CREATE TABLE IF NOT EXISTS wallet (
-		uuid        TEXT PRIMARY KEY NOT NULL,
-		name        TEXT NOT NULL,
-		type        TEXT NOT NULL,
-		address     TEXT NOT NULL UNIQUE,
-		private_key TEXT NOT NULL,
-		created_at  INTEGER NOT NULL,
-		updated_at  INTEGER NOT NULL
+		uuid         TEXT PRIMARY KEY,
+		name         TEXT NOT NULL DEFAULT '',
+		wallet_type  TEXT NOT NULL DEFAULT 'eoa',
+		address      TEXT NOT NULL UNIQUE,
+		private_key  BLOB NOT NULL,
+		created_at   INTEGER NOT NULL,
+		updated_at   INTEGER NOT NULL
 	);
-
-	CREATE INDEX IF NOT EXISTS idx_wallet_address
-	ON wallet(address);
 
 	CREATE TABLE IF NOT EXISTS transactions (
-		uuid                 TEXT PRIMARY KEY NOT NULL,
-		tx_hash              TEXT NOT NULL UNIQUE,
-		nonce                INTEGER NOT NULL DEFAULT 0,
-		chain                TEXT NOT NULL,
-		token                TEXT NOT NULL,
-		amount               TEXT NOT NULL,
-		tx_type              TEXT NOT NULL,
-		state                TEXT NOT NULL,
-		user_op_hash         TEXT NOT NULL DEFAULT '',
-		entry_point_address  TEXT NOT NULL DEFAULT '',
-		bundler_status       TEXT NOT NULL DEFAULT '',
-		tx_mode              TEXT NOT NULL DEFAULT 'direct',
-		sponsorship_mode     TEXT NOT NULL DEFAULT 'direct',
-		token_address        TEXT NOT NULL DEFAULT '',
-		token_decimals       INTEGER NOT NULL DEFAULT 0,
-		is_native_token      INTEGER NOT NULL DEFAULT 0,
-		note                 TEXT NOT NULL DEFAULT '',
-		source               TEXT NOT NULL DEFAULT '',
-		destination          TEXT NOT NULL DEFAULT '',
-		provider_id          TEXT NOT NULL DEFAULT '',
-		wallet_address       TEXT NOT NULL,
-		counterparty_address TEXT NOT NULL DEFAULT '',
-		created_at           INTEGER NOT NULL,
-		updated_at           INTEGER NOT NULL
+		uuid           TEXT PRIMARY KEY,
+		wallet_address TEXT NOT NULL,
+		tx_hash        TEXT NOT NULL UNIQUE,
+		from_address   TEXT NOT NULL DEFAULT '',
+		to_address     TEXT NOT NULL DEFAULT '',
+		token_address  TEXT NOT NULL DEFAULT '',
+		token_symbol   TEXT NOT NULL DEFAULT '',
+		amount         TEXT NOT NULL DEFAULT '0',
+		fee_eth        TEXT NOT NULL DEFAULT '0',
+		fee_usd        TEXT NOT NULL DEFAULT '',
+		usd_amount     TEXT NOT NULL DEFAULT '',
+		network        TEXT NOT NULL DEFAULT '',
+		tx_mode        TEXT NOT NULL DEFAULT 'direct',
+		state          TEXT NOT NULL DEFAULT 'pending',
+		block_number   INTEGER NOT NULL DEFAULT 0,
+		timestamp      INTEGER NOT NULL DEFAULT 0,
+		created_at     INTEGER NOT NULL
 	);
+	CREATE INDEX IF NOT EXISTS idx_transactions_wallet    ON transactions(wallet_address);
+	CREATE INDEX IF NOT EXISTS idx_transactions_timestamp ON transactions(timestamp);
 
-	CREATE INDEX IF NOT EXISTS idx_transactions_wallet_token
-	ON transactions(wallet_address, token, created_at DESC);
-
-	CREATE INDEX IF NOT EXISTS idx_transactions_state
-	ON transactions(state);
-
-	CREATE INDEX IF NOT EXISTS idx_transactions_userop
-	ON transactions(user_op_hash);
-
-	CREATE TABLE IF NOT EXISTS sponsored_operations (
-		uuid                 TEXT PRIMARY KEY NOT NULL,
-		user_operation_hash  TEXT NOT NULL UNIQUE,
-		sender_address       TEXT NOT NULL,
-		network              TEXT NOT NULL,
-		token_address        TEXT NOT NULL,
-		recipient_address    TEXT NOT NULL,
-		amount_units         TEXT NOT NULL,
-		status               TEXT NOT NULL,
-		bundler_tx_hash      TEXT NOT NULL DEFAULT '',
-		created_at           INTEGER NOT NULL,
-		updated_at           INTEGER NOT NULL
+	CREATE TABLE IF NOT EXISTS balance_history (
+		uuid           TEXT PRIMARY KEY,
+		wallet_address TEXT NOT NULL,
+		network        TEXT NOT NULL DEFAULT '',
+		token_address  TEXT NOT NULL DEFAULT '',
+		token_symbol   TEXT NOT NULL DEFAULT '',
+		balance        TEXT NOT NULL DEFAULT '0',
+		usd_value      TEXT NOT NULL DEFAULT '0',
+		fetched_at     INTEGER NOT NULL
 	);
+	CREATE INDEX IF NOT EXISTS idx_balance_history_wallet ON balance_history(wallet_address, fetched_at);
 
-	CREATE INDEX IF NOT EXISTS idx_sponsored_operations_sender
-	ON sponsored_operations(sender_address, created_at DESC);
-
-	CREATE TABLE IF NOT EXISTS paymaster_validations (
-		uuid              TEXT PRIMARY KEY NOT NULL,
-		sender_address    TEXT NOT NULL,
-		decision          TEXT NOT NULL,
-		rejection_reason  TEXT NOT NULL DEFAULT '',
-		amount_units      TEXT NOT NULL DEFAULT '0',
-		metadata          TEXT NOT NULL DEFAULT '',
-		created_at        INTEGER NOT NULL
-	);
-
-	CREATE INDEX IF NOT EXISTS idx_paymaster_validations_sender
-	ON paymaster_validations(sender_address, created_at DESC);
-
-	CREATE TABLE IF NOT EXISTS smart_accounts (
-		uuid          TEXT PRIMARY KEY NOT NULL,
-		owner_address TEXT NOT NULL,
-		network       TEXT NOT NULL,
-		account_address TEXT NOT NULL,
-		created_at    INTEGER NOT NULL,
-		updated_at    INTEGER NOT NULL,
-		UNIQUE(owner_address, network)
-	);
-
-	CREATE INDEX IF NOT EXISTS idx_smart_accounts_owner_network
-	ON smart_accounts(owner_address, network);
-
-	CREATE TABLE IF NOT EXISTS users (
-		uuid       TEXT PRIMARY KEY NOT NULL,
-		email      TEXT NOT NULL UNIQUE,
-		address    TEXT NOT NULL,
+	CREATE TABLE IF NOT EXISTS watched_addresses (
+		uuid       TEXT PRIMARY KEY,
+		address    TEXT NOT NULL UNIQUE,
+		label      TEXT NOT NULL DEFAULT '',
 		created_at INTEGER NOT NULL
 	);
-
-	CREATE INDEX IF NOT EXISTS idx_users_email
-	ON users(email);
-
-	CREATE TABLE IF NOT EXISTS email_transfers (
-		uuid            TEXT PRIMARY KEY NOT NULL,
-		from_email      TEXT NOT NULL,
-		to_email        TEXT NOT NULL,
-		amount_usdc     TEXT NOT NULL,
-		status          TEXT NOT NULL,
-		onchain_tx_hash TEXT NOT NULL DEFAULT '',
-		created_at      INTEGER NOT NULL,
-		updated_at      INTEGER NOT NULL
-	);
-
-	CREATE INDEX IF NOT EXISTS idx_email_transfers_recipient_status
-	ON email_transfers(to_email, status);
-
-	CREATE TABLE IF NOT EXISTS address_events (
-		uuid       TEXT PRIMARY KEY NOT NULL,
-		address    TEXT NOT NULL,
-		chain      TEXT NOT NULL,
-		token      TEXT NOT NULL,
-		amount     TEXT NOT NULL,
-		tx_hash    TEXT NOT NULL,
-		direction  TEXT NOT NULL,
-		timestamp  INTEGER NOT NULL,
-		created_at INTEGER NOT NULL
-	);
-
-	CREATE INDEX IF NOT EXISTS idx_address_events_address_time
-	ON address_events(address, timestamp DESC);
 
 	CREATE TABLE IF NOT EXISTS fx_rates (
-		uuid       TEXT PRIMARY KEY NOT NULL,
-		pair       TEXT NOT NULL,
+		pair       TEXT PRIMARY KEY,
 		rate       TEXT NOT NULL,
 		fetched_at INTEGER NOT NULL
 	);
-
-	CREATE INDEX IF NOT EXISTS idx_fx_rates_pair_time
-	ON fx_rates(pair, fetched_at DESC);
 	`
-	if _, err := db.ExecContext(ctx, q); err != nil {
+	if _, err := db.ExecContext(ctx, ddl); err != nil {
 		return err
 	}
-
-	// Backfill columns for databases created before token metadata support.
-	migrations := []string{
-		"ALTER TABLE transactions ADD COLUMN token_address TEXT NOT NULL DEFAULT '';",
-		"ALTER TABLE transactions ADD COLUMN token_decimals INTEGER NOT NULL DEFAULT 0;",
-		"ALTER TABLE transactions ADD COLUMN is_native_token INTEGER NOT NULL DEFAULT 0;",
-		"ALTER TABLE transactions ADD COLUMN user_op_hash TEXT NOT NULL DEFAULT '';",
-		"ALTER TABLE transactions ADD COLUMN entry_point_address TEXT NOT NULL DEFAULT '';",
-		"ALTER TABLE transactions ADD COLUMN bundler_status TEXT NOT NULL DEFAULT '';",
-		"ALTER TABLE transactions ADD COLUMN tx_mode TEXT NOT NULL DEFAULT 'direct';",
-		"ALTER TABLE transactions ADD COLUMN sponsorship_mode TEXT NOT NULL DEFAULT 'direct';",
+	if err := addColumnIfMissing(ctx, db, "transactions", "fee_usd", "TEXT", "''"); err != nil {
+		return err
 	}
-
-	for _, statement := range migrations {
-		if _, err := db.ExecContext(ctx, statement); err != nil {
-			message := strings.ToLower(err.Error())
-			if strings.Contains(message, "duplicate column name") {
-				continue
-			}
-			return err
-		}
+	if err := addColumnIfMissing(ctx, db, "transactions", "usd_amount", "TEXT", "''"); err != nil {
+		return err
 	}
-
 	return nil
 }
 
-func hardenDatabase(ctx context.Context, db *sql.DB) error {
-	pragmas := []string{
-		"PRAGMA cipher_memory_security = ON;",
-		"PRAGMA secure_delete = ON;",
-		"PRAGMA journal_mode = WAL;",
-		"PRAGMA synchronous = NORMAL;",
+func addColumnIfMissing(ctx context.Context, db *sql.DB, table, column, colType, defaultVal string) error {
+	stmt := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s NOT NULL DEFAULT %s", table, column, colType, defaultVal)
+	_, err := db.ExecContext(ctx, stmt)
+	if err == nil {
+		return nil
 	}
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "duplicate column") || strings.Contains(lower, "already exists") {
+		return nil
+	}
+	return err
+}
 
-	for _, p := range pragmas {
+// ---------------------------------------------------------------------------
+// Low-level helpers
+// ---------------------------------------------------------------------------
+
+func hardenDatabase(ctx context.Context, db *sql.DB) error {
+	for _, p := range []string{
+		"PRAGMA journal_mode=WAL;",
+		"PRAGMA foreign_keys=ON;",
+		"PRAGMA secure_delete=ON;",
+	} {
 		if _, err := db.ExecContext(ctx, p); err != nil {
-			return err
+			return fmt.Errorf("pragma %q: %w", p, err)
 		}
 	}
-
 	return nil
 }
 
 func verifyKey(ctx context.Context, db *sql.DB) error {
-	var name string
-	err := db.QueryRowContext(
-		ctx,
-		"SELECT name FROM sqlite_master LIMIT 1;",
-	).Scan(&name)
-
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	return nil
+	_, err := db.ExecContext(ctx, "SELECT count(*) FROM sqlite_master;")
+	return err
 }
-
-// ---------- Crypto helpers ----------
 
 func deriveDBKey(password string, masterKey, salt []byte) []byte {
-
-	combined := make([]byte, 0, len(password)+len(masterKey))
-	combined = append(combined, []byte(password)...)
-	combined = append(combined, masterKey...)
-
-	key := argon2.IDKey(
-		combined,
-		salt,
-		3,
-		64*1024,
-		4,
-		32,
-	)
-
-	zero(combined)
-	return key
+	combined := append([]byte(password), masterKey...)
+	return argon2.IDKey(combined, salt, 1, 64*1024, 4, 32)
 }
-
-// ---------- Utilities ----------
 
 func newID() string {
 	b := make([]byte, 16)
-	_, _ = rand.Read(b)
-	return hex(b)
+	if _, err := rand.Read(b); err != nil {
+		panic("rand.Read: " + err.Error())
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-func hex(b []byte) string {
+func hexEncode(b []byte) string {
 	const hextable = "0123456789abcdef"
-
-	out := make([]byte, len(b)*2)
+	dst := make([]byte, len(b)*2)
 	for i, v := range b {
-		out[i*2] = hextable[v>>4]
-		out[i*2+1] = hextable[v&0x0f]
+		dst[i*2] = hextable[v>>4]
+		dst[i*2+1] = hextable[v&0x0f]
 	}
-	return string(out)
+	return string(dst)
 }
 
 func zero(b []byte) {

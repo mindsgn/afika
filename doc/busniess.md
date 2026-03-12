@@ -95,4 +95,4 @@ Build a South Africa-first money app that makes digital dollar transfers simple,
 - Introduce controlled production-network rollout and paid pricing.
 
 4. Month 7-12
-- Add merchant tools, improve payout automation, and evaluate AA reintroduction.
+- Add merchant tools and improve payout automation.
