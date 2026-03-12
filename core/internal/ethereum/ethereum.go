@@ -840,6 +840,11 @@ func fetchETHPriceUSD(ctx context.Context) (float64, error) {
 	return parsed.Ethereum.USD, nil
 }
 
+// FetchETHPriceUSD returns the current ETH price in USD.
+func FetchETHPriceUSD(ctx context.Context) (float64, error) {
+	return fetchETHPriceUSD(ctx)
+}
+
 func formatUSD(value float64) string {
 	if value <= 0 {
 		return ""
@@ -864,6 +869,11 @@ func formatUSDFromString(amount string, price float64) string {
 	return formatUSD(val * price)
 }
 
+// FormatUSDFromString multiplies a decimal-string amount by a USD price.
+func FormatUSDFromString(amount string, price float64) string {
+	return formatUSDFromString(amount, price)
+}
+
 func formatUSDValue(amount string) string {
 	r, ok := new(big.Rat).SetString(strings.TrimSpace(amount))
 	if !ok {
@@ -878,6 +888,11 @@ func formatUSDValue(amount string) string {
 		return "0"
 	}
 	return s
+}
+
+// FormatUSDValue normalizes a decimal USD amount string to trimmed 6 decimals.
+func FormatUSDValue(amount string) string {
+	return formatUSDValue(amount)
 }
 
 func normalizeUSDCAmount(amount string) (string, error) {

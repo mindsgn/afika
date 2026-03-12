@@ -86,6 +86,8 @@ export type BackendTransaction = {
   tokenSymbol: string;
   amount: string;
   feeETH: string;
+  feeUsd?: string;
+  usdAmount?: string;
   network: string;
   direction: 'debit' | 'credit';
   state: string;
@@ -148,4 +150,3 @@ export const pocketBackend = {
     return callBackend<BackendFXRate>(`/v1/fx/latest?${params.toString()}`);
   },
 };
-

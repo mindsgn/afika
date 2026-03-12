@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { getLocales } from 'expo-localization';
+import { formatCurrency, convertUSD } from '@/@src/lib/locale/currency';
+import { useFxRate } from '@/@src/lib/locale/useFxRate';
 
 function shortenAddress(addr: any) {
   if (!addr) return '';
@@ -22,14 +23,19 @@ function formatAmount(amount: any, symbol: any) {
 }
 
 export default function TransactionCard({ tx }: { tx: any}) {
-  const locale = getLocales()
+  const { locale, currency, rate } = useFxRate();
   const amount = formatAmount(tx.amount, tx.tokenSymbol);
+  const usdAmount = tx.usdAmount || '';
+  const converted = convertUSD(usdAmount, rate);
+  const displayAmount = converted != null
+    ? formatCurrency(converted, locale, currency)
+    : (usdAmount ? formatCurrency(Number(usdAmount), locale, currency) : '');
 
   return (
     <View style={styles.card}>
       <View>
         <Text style={styles.primaryBalance}>
-          {`${locale[0].currencySymbol} ${tx.usdAmount}`}
+          {displayAmount || amount}
         </Text>
 
         <Text style={styles.meta}>

@@ -329,6 +329,49 @@ func (d *DB) InsertBalanceHistory(ctx context.Context, b BalanceHistory) error {
 	return err
 }
 
+func (d *DB) InsertBalanceHistoryIfChanged(ctx context.Context, b BalanceHistory) (bool, error) {
+	if b.UUID == "" {
+		b.UUID = newID()
+	}
+	if b.FetchedAt == 0 {
+		b.FetchedAt = time.Now().UnixMilli()
+	}
+
+	latest, err := d.LatestBalanceSnapshot(ctx, b.WalletAddress, b.Network, b.TokenAddress)
+	if err != nil {
+		return false, err
+	}
+	if latest != nil && latest.Balance == b.Balance && latest.USDValue == b.USDValue {
+		return false, nil
+	}
+	if err := d.InsertBalanceHistory(ctx, b); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (d *DB) LatestBalanceSnapshot(ctx context.Context, walletAddress, network, tokenAddress string) (*BalanceHistory, error) {
+	var b BalanceHistory
+	query := `SELECT uuid, wallet_address, network, token_address, token_symbol, balance, usd_value, fetched_at
+		FROM balance_history
+		WHERE wallet_address = ? AND token_address = ?`
+	args := []any{strings.ToLower(walletAddress), strings.ToLower(tokenAddress)}
+	if network != "" {
+		query += ` AND network = ?`
+		args = append(args, network)
+	}
+	query += ` ORDER BY fetched_at DESC LIMIT 1`
+	err := d.sql.QueryRowContext(ctx, query, args...).
+		Scan(&b.UUID, &b.WalletAddress, &b.Network, &b.TokenAddress, &b.TokenSymbol, &b.Balance, &b.USDValue, &b.FetchedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
 func (d *DB) ListBalanceHistory(ctx context.Context, walletAddress string, network string, limit int) ([]BalanceHistory, error) {
 	query := `SELECT uuid, wallet_address, network, token_address, token_symbol, balance, usd_value, fetched_at
 		FROM balance_history WHERE wallet_address = ?`
@@ -339,6 +382,47 @@ func (d *DB) ListBalanceHistory(ctx context.Context, walletAddress string, netwo
 	}
 	query += ` ORDER BY fetched_at DESC LIMIT ?`
 	args = append(args, limit)
+	rows, err := d.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []BalanceHistory
+	for rows.Next() {
+		var b BalanceHistory
+		if err := rows.Scan(&b.UUID, &b.WalletAddress, &b.Network, &b.TokenAddress, &b.TokenSymbol, &b.Balance, &b.USDValue, &b.FetchedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+func (d *DB) ListLatestBalances(ctx context.Context, walletAddress string, network string) ([]BalanceHistory, error) {
+	query := `
+		SELECT b.uuid, b.wallet_address, b.network, b.token_address, b.token_symbol, b.balance, b.usd_value, b.fetched_at
+		FROM balance_history b
+		JOIN (
+			SELECT token_address, MAX(fetched_at) AS fetched_at
+			FROM balance_history
+			WHERE wallet_address = ?`
+	args := []any{strings.ToLower(walletAddress)}
+	if network != "" {
+		query += ` AND network = ?`
+		args = append(args, network)
+	}
+	query += `
+			GROUP BY token_address
+		) latest
+		ON b.token_address = latest.token_address AND b.fetched_at = latest.fetched_at
+		WHERE b.wallet_address = ?`
+	args = append(args, strings.ToLower(walletAddress))
+	if network != "" {
+		query += ` AND b.network = ?`
+		args = append(args, network)
+	}
+	query += ` ORDER BY b.token_symbol ASC`
+
 	rows, err := d.sql.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err

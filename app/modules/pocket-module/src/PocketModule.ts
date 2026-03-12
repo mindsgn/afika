@@ -17,7 +17,11 @@ declare class PocketModule extends NativeModule implements PocketApi {
   exportPrivateKey(): Promise<string>;
   getTokenBalance(networkName: string, tokenIdentifier: string): Promise<string>;
   getAllBalances(networkName: string): Promise<string>;
+  syncBalances(networkName: string): Promise<string>;
+  getLatestBalances(networkName: string): Promise<string>;
   getPriceHistory(networkName: string, limit: number): Promise<string>;
+  upsertFXRate(pair: string, rate: string, fetchedAt: number): Promise<void>;
+  latestFXRate(pair: string): Promise<string>;
   addWatchedAddress(address: string, label: string): Promise<void>;
   listWatchedAddresses(): Promise<string>;
   sendToken(networkName: string, tokenIdentifier: string, recipient: string, amount: string): Promise<string>;

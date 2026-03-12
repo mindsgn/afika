@@ -8,6 +8,8 @@ export type WalletTransaction = {
   tokenSymbol: string;
   amount: string;
   feeEth: string;
+  feeUsd?: string;
+  usdAmount?: string;
   network: string;
   mode: string;
   direction: 'credit' | 'debit';
@@ -21,6 +23,9 @@ export type TokenBalance = {
   address: string;
   balance: string;
   isNative: boolean;
+  usdValue?: string;
+  fetchedAt?: number;
+  network?: string;
 };
 
 type WalletState = {

@@ -16,6 +16,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/mindsgn-studio/pocket-money-app/core/internal/database"
@@ -69,6 +70,23 @@ type TokenBalance struct {
 	Address  string `json:"address"`
 	Balance  string `json:"balance"`
 	IsNative bool   `json:"isNative"`
+}
+
+// BalanceSnapshot represents the latest balance state with USD value.
+type BalanceSnapshot struct {
+	TokenAddress string `json:"tokenAddress"`
+	TokenSymbol  string `json:"tokenSymbol"`
+	Balance      string `json:"balance"`
+	USDValue     string `json:"usdValue"`
+	Network      string `json:"network"`
+	FetchedAt    int64  `json:"fetchedAt"`
+}
+
+// FXRate is a gomobile-friendly FX rate record.
+type FXRate struct {
+	Pair      string `json:"pair"`
+	Rate      string `json:"rate"`
+	FetchedAt int64  `json:"fetchedAt"`
 }
 
 // ---------------------------------------------------------------------------
@@ -393,6 +411,123 @@ func (w *WalletCore) GetAllBalances(networkName string) (string, error) {
 	return string(encoded), nil
 }
 
+// SyncBalances fetches live balances, stores them in balance_history, and returns latest balances.
+func (w *WalletCore) SyncBalances(networkName string) (string, error) {
+	db, err := w.getDB()
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	wallets, err := db.ListWallets(context.Background())
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	if len(wallets) == 0 {
+		encoded, _ := json.Marshal([]BalanceSnapshot{})
+		return string(encoded), nil
+	}
+
+	_, rpcURL, err := w.resolveNetwork(networkName)
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+
+	tokens := w.mergedTokens(networkName)
+	hasNative := false
+	for _, t := range tokens {
+		if t.IsNative {
+			hasNative = true
+			break
+		}
+	}
+	ethUSD := 0.0
+	if hasNative {
+		if price, err := ethereum.FetchETHPriceUSD(context.Background()); err == nil {
+			ethUSD = price
+		}
+	}
+
+	out := make([]BalanceSnapshot, 0, len(tokens))
+	for _, t := range tokens {
+		bal, err := ethereum.GetTokenBalanceForAddress(context.Background(), wallets[0].Address, rpcURL, t)
+		if err != nil {
+			bal = "0"
+		}
+
+		usdValue := ""
+		if t.IsNative && ethUSD > 0 {
+			usdValue = ethereum.FormatUSDFromString(bal, ethUSD)
+		} else if strings.EqualFold(t.Symbol, ethereum.USDCSymbol) || strings.EqualFold(t.Identifier, ethereum.USDCIdentifier) {
+			usdValue = ethereum.FormatUSDValue(bal)
+		}
+
+		tokenAddress := t.Address
+		if tokenAddress == "" && t.IsNative {
+			tokenAddress = "native"
+		}
+
+		_, _ = db.InsertBalanceHistoryIfChanged(context.Background(), database.BalanceHistory{
+			WalletAddress: wallets[0].Address,
+			Network:       networkName,
+			TokenAddress:  tokenAddress,
+			TokenSymbol:   t.Symbol,
+			Balance:       bal,
+			USDValue:      usdValue,
+			FetchedAt:     time.Now().UnixMilli(),
+		})
+
+		out = append(out, BalanceSnapshot{
+			TokenAddress: tokenAddress,
+			TokenSymbol:  t.Symbol,
+			Balance:      bal,
+			USDValue:     usdValue,
+			Network:      networkName,
+			FetchedAt:    time.Now().UnixMilli(),
+		})
+	}
+
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	return string(encoded), nil
+}
+
+// GetLatestBalances returns the latest stored balance snapshots from local DB.
+func (w *WalletCore) GetLatestBalances(networkName string) (string, error) {
+	db, err := w.getDB()
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	wallets, err := db.ListWallets(context.Background())
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	if len(wallets) == 0 {
+		encoded, _ := json.Marshal([]BalanceSnapshot{})
+		return string(encoded), nil
+	}
+	rows, err := db.ListLatestBalances(context.Background(), wallets[0].Address, networkName)
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	out := make([]BalanceSnapshot, 0, len(rows))
+	for _, b := range rows {
+		out = append(out, BalanceSnapshot{
+			TokenAddress: b.TokenAddress,
+			TokenSymbol:  b.TokenSymbol,
+			Balance:      b.Balance,
+			USDValue:     b.USDValue,
+			Network:      b.Network,
+			FetchedAt:    b.FetchedAt,
+		})
+	}
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	return string(encoded), nil
+}
+
 // GetPriceHistory returns balance history records from the local database as JSON.
 // limit <= 0 defaults to 50.
 func (w *WalletCore) GetPriceHistory(networkName string, limit int) (string, error) {
@@ -416,6 +551,44 @@ func (w *WalletCore) GetPriceHistory(networkName string, limit int) (string, err
 		return "", sanitizeError(err)
 	}
 	encoded, err := json.Marshal(history)
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	return string(encoded), nil
+}
+
+// UpsertFXRate stores an FX rate in the local database.
+func (w *WalletCore) UpsertFXRate(pair, rate string, fetchedAt int64) error {
+	db, err := w.getDB()
+	if err != nil {
+		return sanitizeError(err)
+	}
+	if strings.TrimSpace(pair) == "" || strings.TrimSpace(rate) == "" {
+		return sanitizeError(errors.New("pair and rate are required"))
+	}
+	if fetchedAt <= 0 {
+		fetchedAt = time.Now().UnixMilli()
+	}
+	return sanitizeError(db.UpsertFXRate(context.Background(), pair, rate, fetchedAt))
+}
+
+// LatestFXRate returns the latest stored FX rate as JSON.
+func (w *WalletCore) LatestFXRate(pair string) (string, error) {
+	db, err := w.getDB()
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	if strings.TrimSpace(pair) == "" {
+		return "", sanitizeError(errors.New("pair is required"))
+	}
+	rate, err := db.LatestFXRate(context.Background(), pair)
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	if rate == nil {
+		return "", nil
+	}
+	encoded, err := json.Marshal(FXRate{Pair: rate.Pair, Rate: rate.Rate, FetchedAt: rate.FetchedAt})
 	if err != nil {
 		return "", sanitizeError(err)
 	}

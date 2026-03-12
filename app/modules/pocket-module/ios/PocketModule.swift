@@ -126,9 +126,35 @@ public final class PocketModule: Module {
       }
     }
 
+    AsyncFunction("syncBalances") { (networkName: String) throws -> String in
+      try self.callString { core, err in
+        core.syncBalances(networkName, error: &err)
+      }
+    }
+
+    AsyncFunction("getLatestBalances") { (networkName: String) throws -> String in
+      try self.callString { core, err in
+        core.getLatestBalances(networkName, error: &err)
+      }
+    }
+
     AsyncFunction("getPriceHistory") { (networkName: String, limit: Int) throws -> String in
       try self.callString { core, err in
         core.getPriceHistory(networkName, limit: limit, error: &err)
+      }
+    }
+
+    // ---- FX rates -----------------------------------------------------------
+
+    AsyncFunction("upsertFXRate") { (pair: String, rate: String, fetchedAt: Int64) throws in
+      try self.callVoid { core in
+        try core.upsertFXRate(pair, rate: rate, fetchedAt: fetchedAt)
+      }
+    }
+
+    AsyncFunction("latestFXRate") { (pair: String) throws -> String in
+      try self.callString { core, err in
+        core.latestFXRate(pair, error: &err)
       }
     }
 

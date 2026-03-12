@@ -1,40 +1,65 @@
 import { useState, useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import useWallet from '../store/wallet';
-import { getLocales } from 'expo-localization';
-import { pocketBackend } from '../lib/api/pocketBackend';
+import PocketCore from '@/modules/pocket-module';
+import { ensureWalletCoreReady, DEFAULT_NETWORK } from '@/@src/lib/core/walletCore';
+import { formatCurrency, convertUSD } from '@/@src/lib/locale/currency';
+import { useFxRate } from '@/@src/lib/locale/useFxRate';
 
 export default function WalletCard() {
-  const locale = getLocales();
   const { walletAddress } = useWallet();
-
+  const { locale, currency, rate } = useFxRate();
   const [usdcBalance, setUsdcBalance] = useState(0);
+  const [displayBalance, setDisplayBalance] = useState('');
 
   useEffect(() => {
     const bootstrap = async () => {
-      const response = await pocketBackend.listTransactions(walletAddress);
+      try {
+        await ensureWalletCoreReady();
+        const cachedJson = await PocketCore.getLatestBalances(DEFAULT_NETWORK);
+        const cached = JSON.parse(cachedJson) as Array<{
+          tokenSymbol: string;
+          balance: string;
+          usdValue: string;
+        }>;
+        const usdc = cached.find((b) => b.tokenSymbol === 'USDC');
+        if (usdc) {
+          setUsdcBalance(Number(usdc.usdValue || usdc.balance || 0));
+        }
+      } catch {
+        // ignore cache read errors
+      }
 
-      const usdcTxs = response.transactions.filter(
-        (tx: any) => tx.tokenSymbol === 'USDC'
-      );
-
-      const balance = usdcTxs.reduce((total: number, tx: any) => {
-        const amount = Number(tx.amount) / 1e6;
-        return tx.direction === 'credit'
-          ? total + amount
-          : total - amount;
-      }, 0);
-
-      setUsdcBalance(balance);
+      try {
+        const latestJson = await PocketCore.syncBalances(DEFAULT_NETWORK);
+        const latest = JSON.parse(latestJson) as Array<{
+          tokenSymbol: string;
+          balance: string;
+          usdValue: string;
+        }>;
+        const usdc = latest.find((b) => b.tokenSymbol === 'USDC');
+        if (usdc) {
+          setUsdcBalance(Number(usdc.usdValue || usdc.balance || 0));
+        }
+      } catch {
+        // ignore sync errors
+      }
     };
 
     bootstrap();
-  }, []);
+  }, [walletAddress]);
+
+  useEffect(() => {
+    const usdString = usdcBalance.toString();
+    const converted = convertUSD(usdString, rate);
+    const value = converted ?? usdcBalance;
+    setDisplayBalance(formatCurrency(value, locale, currency));
+  }, [usdcBalance, locale, currency, rate]);
 
   return (
     <View style={styles.card} testID="wallet-card">
       <Text style={styles.primaryBalance}>
-        {locale[0].currencySymbol} {usdcBalance.toFixed(2)}
+        {displayBalance || formatCurrency(0, locale, currency)}
       </Text>
     </View>
   );

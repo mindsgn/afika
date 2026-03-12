@@ -27,9 +27,15 @@ export type PocketApi = {
   // Balances (live network calls)
   getTokenBalance(networkName: string, tokenIdentifier: string): Promise<string>;
   getAllBalances(networkName: string): Promise<string>;
+  syncBalances(networkName: string): Promise<string>;
+  getLatestBalances(networkName: string): Promise<string>;
 
   // Price history
   getPriceHistory(networkName: string, limit: number): Promise<string>;
+
+  // FX rates
+  upsertFXRate(pair: string, rate: string, fetchedAt: number): Promise<void>;
+  latestFXRate(pair: string): Promise<string>;
 
   // Watched addresses
   addWatchedAddress(address: string, label: string): Promise<void>;

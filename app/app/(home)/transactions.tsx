@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import PocketCore from '@/modules/pocket-module';
 import { Directory, Paths } from 'expo-file-system';
+import { formatCurrency, convertUSD } from '@/@src/lib/locale/currency';
+import { useFxRate } from '@/@src/lib/locale/useFxRate';
 
 const DEFAULT_NETWORK: 'ethereum-mainnet' | 'ethereum-sepolia' = process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 'ethereum-mainnet' : 'ethereum-sepolia';
 
@@ -12,6 +14,8 @@ type TxItem = {
   tokenSymbol: string;
   amount: string;
   feeEth: string;
+  feeUsd?: string;
+  usdAmount?: string;
   network: string;
   mode: string;
   direction: 'credit' | 'debit';
@@ -20,6 +24,7 @@ type TxItem = {
 };
 
 export default function App() {
+  const { locale, currency, rate } = useFxRate();
   const [walletAddress, setWalletAddress] = useState('')
   const [transactions, setTransactions] = useState<TxItem[]>([])
   const [status, setStatus] = useState('Initializing...')
@@ -44,6 +49,15 @@ export default function App() {
     if (item.state === 'failed') return 'Failed'
     if (item.state === 'pending') return 'Pending'
     return item.state
+  }
+
+  const formatLocal = (usdValue?: string) => {
+    if (!usdValue) return '';
+    const converted = convertUSD(usdValue, rate);
+    if (converted != null) {
+      return formatCurrency(converted, locale, currency);
+    }
+    return formatCurrency(Number(usdValue), locale, currency);
   }
 
   useEffect(() => {
@@ -92,7 +106,8 @@ export default function App() {
           </Text>
           <Text style={styles.row}>Status: {formatLifecycle(item)}</Text>
           <Text style={styles.row}>Network: {item.network} / {item.mode}</Text>
-          <Text style={styles.row}>Fee: {item.feeEth} ETH</Text>
+          <Text style={styles.row}>Amount: {formatLocal(item.usdAmount) || item.amount}</Text>
+          <Text style={styles.row}>Fee: {formatLocal(item.feeUsd) || `${item.feeEth} ETH`}</Text>
           <Text style={styles.row}>From: {item.fromAddress}</Text>
           <Text style={styles.row}>To: {item.toAddress}</Text>
           <Text style={styles.row}>Hash: {item.hash}</Text>

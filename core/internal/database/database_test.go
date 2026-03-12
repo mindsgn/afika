@@ -303,6 +303,102 @@ func TestInsertAndListBalanceHistory(t *testing.T) {
 	}
 }
 
+func TestInsertBalanceHistoryIfChanged(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	wallet := "0xdddddddddddddddddddddddddddddddddddddddd"
+
+	snap := BalanceHistory{
+		WalletAddress: wallet,
+		Network:       "ethereum-sepolia",
+		TokenAddress:  "native",
+		TokenSymbol:   "ETH",
+		Balance:       "1.0",
+		USDValue:      "2000",
+		FetchedAt:     1700000000,
+	}
+
+	inserted, err := db.InsertBalanceHistoryIfChanged(ctx, snap)
+	if err != nil {
+		t.Fatalf("InsertBalanceHistoryIfChanged() error = %v", err)
+	}
+	if !inserted {
+		t.Fatalf("expected insert on first call")
+	}
+
+	inserted, err = db.InsertBalanceHistoryIfChanged(ctx, snap)
+	if err != nil {
+		t.Fatalf("InsertBalanceHistoryIfChanged() duplicate error = %v", err)
+	}
+	if inserted {
+		t.Fatalf("expected duplicate snapshot to be skipped")
+	}
+
+	snap.Balance = "1.5"
+	inserted, err = db.InsertBalanceHistoryIfChanged(ctx, snap)
+	if err != nil {
+		t.Fatalf("InsertBalanceHistoryIfChanged() updated error = %v", err)
+	}
+	if !inserted {
+		t.Fatalf("expected insert when balance changes")
+	}
+
+	history, err := db.ListBalanceHistory(ctx, wallet, "ethereum-sepolia", 10)
+	if err != nil {
+		t.Fatalf("ListBalanceHistory() error = %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("expected 2 snapshots, got %d", len(history))
+	}
+}
+
+func TestListLatestBalances(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+	wallet := "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+
+	_ = db.InsertBalanceHistory(ctx, BalanceHistory{
+		WalletAddress: wallet,
+		Network:       "ethereum-sepolia",
+		TokenAddress:  "native",
+		TokenSymbol:   "ETH",
+		Balance:       "1.0",
+		USDValue:      "2000",
+		FetchedAt:     1000,
+	})
+	_ = db.InsertBalanceHistory(ctx, BalanceHistory{
+		WalletAddress: wallet,
+		Network:       "ethereum-sepolia",
+		TokenAddress:  "native",
+		TokenSymbol:   "ETH",
+		Balance:       "1.2",
+		USDValue:      "2400",
+		FetchedAt:     2000,
+	})
+	_ = db.InsertBalanceHistory(ctx, BalanceHistory{
+		WalletAddress: wallet,
+		Network:       "ethereum-sepolia",
+		TokenAddress:  "usdc",
+		TokenSymbol:   "USDC",
+		Balance:       "5",
+		USDValue:      "5",
+		FetchedAt:     1500,
+	})
+
+	latest, err := db.ListLatestBalances(ctx, wallet, "ethereum-sepolia")
+	if err != nil {
+		t.Fatalf("ListLatestBalances() error = %v", err)
+	}
+	if len(latest) != 2 {
+		t.Fatalf("expected 2 latest balances, got %d", len(latest))
+	}
+	for _, b := range latest {
+		if b.TokenSymbol == "ETH" && b.Balance != "1.2" {
+			t.Fatalf("expected latest ETH balance 1.2, got %s", b.Balance)
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Watched addresses
 // ---------------------------------------------------------------------------

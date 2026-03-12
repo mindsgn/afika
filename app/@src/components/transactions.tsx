@@ -1,22 +1,26 @@
 import { StyleSheet, View } from 'react-native';
 import useWallet from '../store/wallet';
 import { useEffect, useMemo } from 'react';
-import { pocketBackend } from '../lib/api/pocketBackend';
 import { FlashList } from "@shopify/flash-list";
 import EmptyTransactionCard from './empty-transaction-card';
 import TransactionCard from './transaction-card';
+import { pocketBackend } from '../lib/api/pocketBackend';
 
 export default function TransactionList() {
   const { transactions, walletAddress, setTransactions } = useWallet();
 
   useEffect(() => {
     const bootstrap = async () => {
-      const response = await pocketBackend.listTransactions(walletAddress);
-      setTransactions(response.transactions);
+      try {
+        const response = await pocketBackend.listTransactions(walletAddress);
+        console.log(response.transactions);
+      } catch {
+        //setTransactions([]);
+      }
     };
 
     bootstrap();
-  }, []);
+  }, [walletAddress, setTransactions]);
   
   const usdcTransactions = useMemo(() => {
     return transactions.filter((tx: any) => tx.tokenSymbol === "USDC");
@@ -27,8 +31,8 @@ export default function TransactionList() {
       <FlashList
         data={usdcTransactions}
         estimatedItemSize={90}
-        keyExtractor={(item) => item.txHash}
-        ListEmptyComponent={<EmptyTransactionCard />}
+        keyExtractor={(item) => item.hash}
+        ListEmptyComponent={ <EmptyTransactionCard /> }
         renderItem={({ item }) => <TransactionCard tx={item} />}
       />
     </View>
