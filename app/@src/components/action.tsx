@@ -24,7 +24,7 @@ const styles = StyleSheet.create({
     gap: 6,
     width: 150,
     borderWidth: 1,
-    borderColor: '#2A3143',
+    // borderColor: '#2A3143',
     marginBottom: 16,
   },
   title: {

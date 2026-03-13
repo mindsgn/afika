@@ -17,7 +17,6 @@ export type WalletTransaction = {
   timestamp: number;
 };
 
-/** A single token balance entry from getAllBalances / getTokenBalance. */
 export type TokenBalance = {
   symbol: string;
   address: string;

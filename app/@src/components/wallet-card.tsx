@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import useWallet from '../store/wallet';
 import PocketCore from '@/modules/pocket-module';
 import { ensureWalletCoreReady, DEFAULT_NETWORK } from '@/@src/lib/core/walletCore';
@@ -58,9 +58,21 @@ export default function WalletCard() {
 
   return (
     <View style={styles.card} testID="wallet-card">
-      <Text style={styles.primaryBalance}>
-        {displayBalance || formatCurrency(0, locale, currency)}
-      </Text>
+      <View>
+         <Text style={styles.secondaryBalance}>
+            {"Your Balance"}
+          </Text>
+          <Text style={styles.primaryBalance}>
+            {displayBalance || formatCurrency(0, locale, currency)}
+          </Text>
+      </View>
+      <View>
+        <TouchableOpacity>
+          <Text style={styles.secondaryBalance}>
+            see
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -73,8 +85,11 @@ const styles = StyleSheet.create({
     gap: 6,
     height: 150,
     borderWidth: 1,
-    borderColor: '#2A3143',
+    // borderColor: '#2A3143',
     marginBottom: 16,
+    display: "flex",
+    flexDirection: "row",
+    justifyContent: "space-between"
   },
   primaryBalance: {
     fontSize: 32,

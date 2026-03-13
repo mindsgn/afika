@@ -8,7 +8,7 @@ export default function RootLayout() {
         <Stack.Screen name="(onboarding)/confirm" options={{ headerShown: false }} />
         <Stack.Screen name="(onboarding)/password" options={{ headerShown: false }} />
         <Stack.Screen name="(home)" options={{ headerShown: false }} />
-        <Stack.Screen name="send" options={{ headerShown: false }} />
+        <Stack.Screen name="send" options={{ headerShown: false, presentation: "modal" }} />
         <Stack.Screen name="error" options={{ headerShown: false }} />
     </Stack>
   );

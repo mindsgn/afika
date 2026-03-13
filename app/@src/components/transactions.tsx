@@ -5,6 +5,8 @@ import { FlashList } from "@shopify/flash-list";
 import EmptyTransactionCard from './empty-transaction-card';
 import TransactionCard from './transaction-card';
 import { pocketBackend } from '../lib/api/pocketBackend';
+import TransactionHeader from './transaction-header';
+import { WalletTransaction } from '../store/wallet';
 
 export default function TransactionList() {
   const { transactions, walletAddress, setTransactions } = useWallet();
@@ -13,9 +15,11 @@ export default function TransactionList() {
     const bootstrap = async () => {
       try {
         const response = await pocketBackend.listTransactions(walletAddress);
-        console.log(response.transactions);
+        const { transactions } = response
+        const transactionList = transactions as WalletTransaction[];
+        setTransactions(transactionList)
       } catch {
-        //setTransactions([]);
+        //get local sql
       }
     };
 
@@ -33,6 +37,7 @@ export default function TransactionList() {
         estimatedItemSize={90}
         keyExtractor={(item) => item.hash}
         ListEmptyComponent={ <EmptyTransactionCard /> }
+        ListHeaderComponent={<TransactionHeader />}
         renderItem={({ item }) => <TransactionCard tx={item} />}
       />
     </View>
