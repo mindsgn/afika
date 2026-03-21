@@ -3,6 +3,8 @@ import PocketCore from '@/modules/pocket-module';
 import { pocketBackend } from '@/@src/lib/api/pocketBackend';
 import { ensureWalletCoreReady } from '@/@src/lib/core/walletCore';
 import { getLocaleCurrency } from './currency';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { getFirestoreDb } from '@/@src/lib/firebase/client';
 
 type FxState = {
   locale: string;
@@ -18,6 +20,7 @@ export function useFxRate(): FxState {
 
   useEffect(() => {
     let mounted = true;
+    let unsubscribe: (() => void) | null = null;
     const bootstrap = async () => {
       const info = getLocaleCurrency();
       if (mounted) {
@@ -47,19 +50,37 @@ export function useFxRate(): FxState {
         // ignore cache errors
       }
 
-      try {
-        if (pocketBackend.isConfigured()) {
-          const latest = await pocketBackend.getFXRate(pair);
-          const parsedRate = Number(latest.rate);
+      const db = getFirestoreDb();
+      if (db) {
+        const ref = doc(db, 'fxRates', pair.replace('/', '_'));
+        unsubscribe = onSnapshot(ref, async (snap) => {
+          const data = snap.data();
+          if (!data) return;
+          const parsedRate = Number(data.rate);
           if (Number.isFinite(parsedRate) && parsedRate > 0) {
-            await PocketCore.upsertFXRate(pair, latest.rate, latest.fetchedAt);
-            if (mounted) {
-              setRate(parsedRate);
+            try {
+              await PocketCore.upsertFXRate(pair, String(data.rate), Number(data.fetchedAt || Date.now()));
+            } catch {
+              // ignore cache errors
+            }
+            if (mounted) setRate(parsedRate);
+          }
+        });
+      } else {
+        try {
+          if (pocketBackend.isConfigured()) {
+            const latest = await pocketBackend.getFXRate(pair);
+            const parsedRate = Number(latest.rate);
+            if (Number.isFinite(parsedRate) && parsedRate > 0) {
+              await PocketCore.upsertFXRate(pair, latest.rate, latest.fetchedAt);
+              if (mounted) {
+                setRate(parsedRate);
+              }
             }
           }
+        } catch {
+          // ignore backend errors
         }
-      } catch {
-        // ignore backend errors
       }
 
       if (mounted) setReady(true);
@@ -68,6 +89,7 @@ export function useFxRate(): FxState {
     bootstrap();
     return () => {
       mounted = false;
+      if (unsubscribe) unsubscribe();
     };
   }, []);
 

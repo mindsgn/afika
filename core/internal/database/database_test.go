@@ -446,3 +446,66 @@ func TestUpsertAndLatestFXRate(t *testing.T) {
 		t.Fatalf("expected rate 18.75, got %s", rate.Rate)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Recipients
+// ---------------------------------------------------------------------------
+
+func TestRecipientInsertGetSearchUpdate(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	created, err := db.InsertRecipient(ctx, Recipient{
+		Name:  "Alice Example",
+		Phone: "+27 82-000-0000",
+	})
+	if err != nil {
+		t.Fatalf("InsertRecipient() error = %v", err)
+	}
+	if created.UUID == "" {
+		t.Fatal("expected recipient uuid")
+	}
+
+	fetched, err := db.GetRecipientByID(ctx, created.UUID)
+	if err != nil {
+		t.Fatalf("GetRecipientByID() error = %v", err)
+	}
+	if fetched == nil || fetched.Name != "Alice Example" {
+		t.Fatalf("expected fetched recipient name, got %#v", fetched)
+	}
+
+	byName, err := db.SearchRecipientsByName(ctx, "alice")
+	if err != nil {
+		t.Fatalf("SearchRecipientsByName() error = %v", err)
+	}
+	if len(byName) == 0 {
+		t.Fatal("expected name search results")
+	}
+
+	byPhone, err := db.SearchRecipientsByPhone(ctx, "2782000")
+	if err != nil {
+		t.Fatalf("SearchRecipientsByPhone() error = %v", err)
+	}
+	if len(byPhone) == 0 {
+		t.Fatal("expected phone search results")
+	}
+
+	updated, err := db.UpdateRecipient(ctx, Recipient{
+		UUID: created.UUID,
+		Name: "Alice Updated",
+	})
+	if err != nil {
+		t.Fatalf("UpdateRecipient() error = %v", err)
+	}
+	if updated.UpdatedAt == 0 {
+		t.Fatal("expected updatedAt to be set")
+	}
+
+	refetched, err := db.GetRecipientByID(ctx, created.UUID)
+	if err != nil {
+		t.Fatalf("GetRecipientByID() (after update) error = %v", err)
+	}
+	if refetched == nil || refetched.Name != "Alice Updated" {
+		t.Fatalf("expected updated recipient name, got %#v", refetched)
+	}
+}

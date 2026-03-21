@@ -12,15 +12,10 @@ import (
 	"time"
 )
 
-// FXStore is the minimal interface that the forex worker writes to.
 type FXStore interface {
 	UpsertFXRate(ctx context.Context, pair, rate string, fetchedAt int64) error
 }
 
-// RunForexWorker fetches all current FX rates from Frankfurter every interval
-// and upserts them into store. It returns when ctx is cancelled.
-// No API key required. Base currencies: USD and EUR.
-// Frankfurter API: https://api.frankfurter.dev/v1/latest
 func RunForexWorker(ctx context.Context, store FXStore, interval time.Duration) {
 	if interval <= 0 {
 		interval = 15 * time.Minute
@@ -50,7 +45,7 @@ func fetchAndStore(ctx context.Context, store FXStore) {
 	now := time.Now().UnixMilli()
 	saved := 0
 	for pair, rate := range rates {
-		if err := store.UpsertFXRate(ctx, pair, rate, now); err != nil {
+		if err := upsertFXRateWithRetry(ctx, store, pair, rate, now); err != nil {
 			log.Printf("[forex-worker] upsert %s error: %v", pair, err)
 			continue
 		}
@@ -59,15 +54,36 @@ func fetchAndStore(ctx context.Context, store FXStore) {
 	log.Printf("[forex-worker] saved %d fx rates", saved)
 }
 
-// frankFurterResponse is the JSON schema from https://api.frankfurter.dev/v1/latest
+func upsertFXRateWithRetry(ctx context.Context, store FXStore, pair, rate string, fetchedAt int64) error {
+	const (
+		maxAttempts = 3
+		baseDelay   = 200 * time.Millisecond
+		timeout     = 30 * time.Second
+	)
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		opCtx, cancel := context.WithTimeout(ctx, timeout)
+		err := store.UpsertFXRate(opCtx, pair, rate, fetchedAt)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if opCtx.Err() == context.DeadlineExceeded || strings.Contains(strings.ToLower(err.Error()), "timeout") {
+			time.Sleep(baseDelay * time.Duration(1<<attempt))
+			continue
+		}
+		return err
+	}
+	return lastErr
+}
+
 type frankfurterResponse struct {
 	Base  string             `json:"base"`
 	Date  string             `json:"date"`
 	Rates map[string]float64 `json:"rates"`
 }
 
-// fetchFrankfurterRates returns a flat map of "BASE/QUOTE" to decimal-rate-string
-// for USD and EUR base currencies.
 func fetchFrankfurterRates(ctx context.Context) (map[string]string, error) {
 	bases := []string{"USD", "EUR"}
 	combined := make(map[string]string)
@@ -104,7 +120,6 @@ func fetchFrankfurterRates(ctx context.Context) (map[string]string, error) {
 			pair := strings.ToUpper(base) + "/" + strings.ToUpper(quote)
 			combined[pair] = strconv.FormatFloat(rate, 'f', 8, 64)
 		}
-		// Also store the reciprocal so USD/USD = 1 is implicit
 	}
 
 	return combined, nil

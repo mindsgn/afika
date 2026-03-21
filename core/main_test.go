@@ -308,3 +308,36 @@ func TestImportBackupWrongPassphraseFails(t *testing.T) {
 		t.Fatal("expected error for wrong passphrase")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Recipients
+// ---------------------------------------------------------------------------
+
+func TestRecipientRoundTrip(t *testing.T) {
+	wallet := newInitedWallet(t)
+
+	payload := `{"name":"Sam Example","phone":"+27123456789"}`
+	saved, err := wallet.SaveRecipient(payload)
+	if err != nil {
+		t.Fatalf("SaveRecipient() error = %v", err)
+	}
+	var savedItem Recipient
+	if err := json.Unmarshal([]byte(saved), &savedItem); err != nil {
+		t.Fatalf("SaveRecipient() JSON error = %v", err)
+	}
+	if savedItem.UUID == "" {
+		t.Fatal("expected saved recipient uuid")
+	}
+
+	got, err := wallet.GetRecipient(savedItem.UUID)
+	if err != nil {
+		t.Fatalf("GetRecipient() error = %v", err)
+	}
+	var fetched Recipient
+	if err := json.Unmarshal([]byte(got), &fetched); err != nil {
+		t.Fatalf("GetRecipient() JSON error = %v", err)
+	}
+	if fetched.Name != "Sam Example" {
+		t.Fatalf("expected recipient name, got %s", fetched.Name)
+	}
+}

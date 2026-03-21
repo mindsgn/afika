@@ -117,6 +117,15 @@ export default function Settings() {
           <BodyText style={styles.rowLabel}>Change PIN</BodyText>
           <Text style={styles.chevron}>›</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          testID="link-phone-button"
+          style={styles.rowButton}
+          onPress={() => router.push('/(home)/link-phone')}
+        >
+          <BodyText style={styles.rowLabel}>Link Phone Number (Level 1)</BodyText>
+          <Text style={styles.chevron}>›</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Danger Section */}

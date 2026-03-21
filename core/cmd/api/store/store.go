@@ -32,6 +32,7 @@ type TransactionItem struct {
 	TxHash        string
 	FromAddress   string
 	ToAddress     string
+	Description   string
 	TokenAddress  string
 	TokenSymbol   string
 	Amount        string

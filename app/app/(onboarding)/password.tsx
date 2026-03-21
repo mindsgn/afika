@@ -6,7 +6,6 @@ import {
   Pressable,
   ActivityIndicator
 } from 'react-native';
-import * as Haptics from 'expo-haptics';
 import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
 import PocketCore from '@/modules/pocket-module';
@@ -27,13 +26,11 @@ export default function PasswordScreen() {
 
   const onPressNumber = async (value: string) => {
     if (confirmationPin.length >= PIN_LENGTH) return;
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setConfirmationPin((p) => [...p, value]);
   };
 
   const onDelete = async () => {
     if (confirmationPin.length === 0) return;
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setConfirmationPin((p) => p.slice(0, -1));
   };
 
@@ -51,7 +48,6 @@ export default function PasswordScreen() {
       }
 
       setWalletAddress(walletAddress);
-      
       setNetwork(DEFAULT_NETWORK);
       router.replace('/(home)');
     } catch (error) {
@@ -89,14 +85,14 @@ export default function PasswordScreen() {
   };
 
   const renderButton = (label: string, onPress: () => void) => (
-    <Pressable
+    <HapticPressable
       key={label}
       testID={`unlock-pin-key-${label}`}
       onPress={onPress}
       style={({ pressed }) => [styles.key, pressed && styles.keyPressed]}
     >
       <Text style={styles.keyText}>{label}</Text>
-    </Pressable>
+    </HapticPressable>
   );
 
 
@@ -140,13 +136,13 @@ export default function PasswordScreen() {
         )}
         <View style={styles.keyPlaceholder} />
         {renderButton('0', () => onPressNumber('0'))}
-        <Pressable
+        <HapticPressable
           testID="unlock-pin-delete"
           onPress={onDelete}
           style={({ pressed }) => [styles.key, pressed && styles.keyPressed]}
         >
           <Text style={styles.keyText}>⌫</Text>
-        </Pressable>
+        </HapticPressable>
       </View>
     </Screen>
   );

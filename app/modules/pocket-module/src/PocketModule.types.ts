@@ -1,6 +1,17 @@
 export type PocketNetwork = 'ethereum-mainnet' | 'ethereum-sepolia' | string;
 export type TokenIdentifier = 'native' | 'usdc' | string;
 
+export type Recipient = {
+  uuid: string;
+  name: string;
+  phone: string;
+  walletAddress: string;
+  email: string;
+  country: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type PocketApi = {
   // Lifecycle
   initWallet(dataDir: string, masterKeyB64: string, kdfSaltB64: string): Promise<void>;
@@ -29,6 +40,7 @@ export type PocketApi = {
   getAllBalances(networkName: string): Promise<string>;
   syncBalances(networkName: string): Promise<string>;
   getLatestBalances(networkName: string): Promise<string>;
+  upsertBalanceSnapshots(jsonPayload: string): Promise<void>;
 
   // Price history
   getPriceHistory(networkName: string, limit: number): Promise<string>;
@@ -41,6 +53,14 @@ export type PocketApi = {
   addWatchedAddress(address: string, label: string): Promise<void>;
   listWatchedAddresses(): Promise<string>;
 
+  // Recipients
+  saveRecipient(jsonPayload: string): Promise<string>;
+  getRecipient(id: string): Promise<string>;
+  getAllRecipients(): Promise<string>;
+  searchRecipientsByName(name: string): Promise<string>;
+  searchRecipientsByPhone(phone: string): Promise<string>;
+  updateRecipient(jsonPayload: string): Promise<string>;
+
   // Token transfers
   sendToken(networkName: string, tokenIdentifier: string, recipient: string, amount: string): Promise<string>;
   sendUSDC(networkName: string, recipient: string, amount: string): Promise<string>;
@@ -49,6 +69,7 @@ export type PocketApi = {
   syncInboundTransactions(networkName: string): Promise<string>;
   listTokenTransactions(networkName: string, tokenIdentifier: string, limit: number, offset: number): Promise<string>;
   listAllTransactions(networkName: string, limit: number, offset: number): Promise<string>;
+  upsertTransactions(jsonPayload: string): Promise<void>;
 
   // Backup
   exportWalletBackup(passphrase: string): Promise<string>;

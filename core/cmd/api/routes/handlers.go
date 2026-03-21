@@ -10,6 +10,7 @@ import (
 
 	"github.com/mindsgn-studio/pocket-money-app/core/cmd/api/store"
 	"github.com/mindsgn-studio/pocket-money-app/core/cmd/api/types"
+	"github.com/mindsgn-studio/pocket-money-app/core/internal/services"
 )
 
 // API holds the dependencies injected into all HTTP handlers.
@@ -134,12 +135,14 @@ func (a *API) GetBalances() http.HandlerFunc {
 		}
 		balances := make([]types.TokenBalance, 0, len(snapshots))
 		for _, s := range snapshots {
+			fetchedAtMs := normalizeTimestampMs(s.FetchedAt)
 			balances = append(balances, types.TokenBalance{
 				TokenAddress: s.TokenAddress,
 				TokenSymbol:  s.TokenSymbol,
 				Balance:      s.Balance,
 				USDValue:     s.USDValue,
-				FetchedAt:    s.FetchedAt,
+				FetchedAtMs:  fetchedAtMs,
+				FetchedAt:    fetchedAtMs,
 			})
 		}
 		writeSuccess(w, r, http.StatusOK, types.BalancesResponse{
@@ -202,13 +205,16 @@ func (a *API) ListTransactions() http.HandlerFunc {
 
 		items := make([]types.TransactionItem, 0, len(txs))
 		for _, t := range txs {
+			timestampMs := normalizeTimestampMs(t.Timestamp)
 			items = append(items, types.TransactionItem{
 				TxHash:       t.TxHash,
 				FromAddress:  t.FromAddress,
 				ToAddress:    t.ToAddress,
+				Description:  t.Description,
 				TokenAddress: t.TokenAddress,
 				TokenSymbol:  t.TokenSymbol,
 				Amount:       t.Amount,
+				FeeNative:    t.FeeETH,
 				FeeETH:       t.FeeETH,
 				FeeUSD:       t.FeeUSD,
 				USDAmount:    t.USDAmount,
@@ -216,7 +222,8 @@ func (a *API) ListTransactions() http.HandlerFunc {
 				Direction:    t.Direction,
 				State:        t.State,
 				BlockNumber:  t.BlockNumber,
-				Timestamp:    t.Timestamp,
+				TimestampMs:  timestampMs,
+				Timestamp:    timestampMs,
 			})
 		}
 		writeSuccess(w, r, http.StatusOK, types.TransactionListResponse{
@@ -228,6 +235,106 @@ func (a *API) ListTransactions() http.HandlerFunc {
 			Offset:       offset,
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Transaction announce
+// ---------------------------------------------------------------------------
+
+// AnnounceTransaction handles POST /v1/transactions/announce.
+func (a *API) AnnounceTransaction() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeError(w, r, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", false)
+			return
+		}
+		var req types.TransactionAnnounceRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, r, http.StatusBadRequest, "invalid_body", "invalid JSON body", false)
+			return
+		}
+		req.TxHash = strings.TrimSpace(strings.ToLower(req.TxHash))
+		req.FromAddress = strings.TrimSpace(strings.ToLower(req.FromAddress))
+		req.ToAddress = strings.TrimSpace(strings.ToLower(req.ToAddress))
+		req.TokenSymbol = strings.TrimSpace(strings.ToUpper(req.TokenSymbol))
+		req.TokenAddress = strings.TrimSpace(strings.ToLower(req.TokenAddress))
+		req.Network = strings.TrimSpace(req.Network)
+		req.Amount = strings.TrimSpace(req.Amount)
+		if req.TxHash == "" || req.FromAddress == "" || req.ToAddress == "" || req.TokenSymbol == "" || req.Amount == "" || req.Network == "" {
+			writeError(w, r, http.StatusBadRequest, "missing_fields", "txHash, fromAddress, toAddress, tokenSymbol, amount, and network are required", false)
+			return
+		}
+		if req.TimestampMs == 0 && req.Timestamp != 0 {
+			req.TimestampMs = req.Timestamp
+		}
+		if req.TimestampMs != 0 && req.TimestampMs < 1_000_000_000_000 {
+			req.TimestampMs *= 1000
+		}
+		if req.TimestampMs == 0 {
+			req.TimestampMs = time.Now().UnixMilli()
+		}
+		req.Timestamp = req.TimestampMs
+
+		creditDescription := services.DescribeTransfer("credit", req.TokenSymbol, req.FromAddress, req.ToAddress)
+		debitDescription := services.DescribeTransfer("debit", req.TokenSymbol, req.FromAddress, req.ToAddress)
+
+		credit := store.TransactionItem{
+			WalletAddress: req.ToAddress,
+			TxHash:        req.TxHash,
+			FromAddress:   req.FromAddress,
+			ToAddress:     req.ToAddress,
+			Description:   creditDescription,
+			TokenAddress:  req.TokenAddress,
+			TokenSymbol:   req.TokenSymbol,
+			Amount:        req.Amount,
+			Network:       req.Network,
+			Direction:     "credit",
+			State:         "completed",
+			BlockNumber:   0,
+			Timestamp:     req.TimestampMs,
+			FetchedAt:     time.Now().UnixMilli(),
+		}
+		debit := store.TransactionItem{
+			WalletAddress: req.FromAddress,
+			TxHash:        req.TxHash,
+			FromAddress:   req.FromAddress,
+			ToAddress:     req.ToAddress,
+			Description:   debitDescription,
+			TokenAddress:  req.TokenAddress,
+			TokenSymbol:   req.TokenSymbol,
+			Amount:        req.Amount,
+			Network:       req.Network,
+			Direction:     "debit",
+			State:         "completed",
+			BlockNumber:   0,
+			Timestamp:     req.TimestampMs,
+			FetchedAt:     time.Now().UnixMilli(),
+		}
+
+		if err := a.store.UpsertTransaction(r.Context(), credit); err != nil {
+			writeError(w, r, http.StatusInternalServerError, "announce_failed", "failed to announce credit transaction", true)
+			return
+		}
+		if err := a.store.UpsertTransaction(r.Context(), debit); err != nil {
+			writeError(w, r, http.StatusInternalServerError, "announce_failed", "failed to announce debit transaction", true)
+			return
+		}
+
+		writeSuccess(w, r, http.StatusCreated, types.TransactionAnnounceResponse{
+			TxHash:      req.TxHash,
+			Network:     req.Network,
+			TimestampMs: req.TimestampMs,
+			Timestamp:   req.TimestampMs,
+			Announced:   true,
+		})
+	}
+}
+
+func normalizeTimestampMs(value int64) int64 {
+	if value > 0 && value < 1_000_000_000_000 {
+		return value * 1000
+	}
+	return value
 }
 
 // ---------------------------------------------------------------------------

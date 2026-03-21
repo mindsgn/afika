@@ -18,6 +18,10 @@ export default function ActionCard() {
 }
 
 const styles = StyleSheet.create({
+  container:{
+    display: "flex",
+    flexDirection: "row"
+  },
   button: {
     borderRadius: 20,
     backgroundColor: '#161B27',
@@ -36,4 +40,3 @@ const styles = StyleSheet.create({
     marginHorizontal: 10,
   }
 });
-

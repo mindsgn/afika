@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import PocketCore from '@/modules/pocket-module';
 import { Directory, Paths } from 'expo-file-system';
 import { formatCurrency, convertUSD } from '@/@src/lib/locale/currency';
 import { useFxRate } from '@/@src/lib/locale/useFxRate';
+import { HapticPressable } from '@/@src/components/primatives/haptic-pressable';
 
 const DEFAULT_NETWORK: 'ethereum-mainnet' | 'ethereum-sepolia' = process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 'ethereum-mainnet' : 'ethereum-sepolia';
 
@@ -93,9 +94,9 @@ export default function App() {
       <Text style={styles.value}>{walletAddress || 'Not ready'}</Text>
       <Text style={styles.value}>Last updated: {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : 'n/a'}</Text>
 
-      <Pressable testID="transactions-refresh" style={styles.refresh} onPress={() => refreshData().catch((error) => setStatus(`Refresh failed: ${String(error)}`))}>
+      <HapticPressable testID="transactions-refresh" style={styles.refresh} onPress={() => refreshData().catch((error) => setStatus(`Refresh failed: ${String(error)}`))}>
         <Text style={styles.refreshText}>Refresh</Text>
-      </Pressable>
+      </HapticPressable>
 
       <Text style={styles.section}>Latest Activity</Text>
       {transactions.length === 0 ? <Text style={styles.value}>No transactions yet</Text> : null}

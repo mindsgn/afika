@@ -16,8 +16,6 @@ import (
 	_ "github.com/mutecomm/go-sqlcipher/v4"
 )
 
-// SecureKeyStore must be implemented by the platform layer (iOS Keychain /
-// Android Keystore) to supply a durable master key and KDF salt.
 type SecureKeyStore interface {
 	GetOrCreateMasterKey(ctx context.Context) ([]byte, error)
 	GetOrCreateKDFSalt(ctx context.Context) ([]byte, error)
@@ -48,6 +46,7 @@ type TransactionRecord struct {
 	TxHash        string
 	FromAddress   string
 	ToAddress     string
+	Description   string
 	TokenAddress  string
 	TokenSymbol   string
 	Amount        string
@@ -78,6 +77,18 @@ type WatchedAddress struct {
 	Address   string
 	Label     string
 	CreatedAt int64
+}
+
+type Recipient struct {
+	UUID            string
+	Name            string
+	Phone           string
+	PhoneNormalized string
+	WalletAddress   string
+	Email           string
+	Country         string
+	CreatedAt       int64
+	UpdatedAt       int64
 }
 
 type FXRate struct {
@@ -237,12 +248,12 @@ func (d *DB) InsertTransaction(ctx context.Context, tx TransactionRecord) error 
 	_, err := d.sql.ExecContext(ctx, `
 		INSERT OR IGNORE INTO transactions (
 			uuid, wallet_address, tx_hash, from_address, to_address,
-			token_address, token_symbol, amount, fee_eth, fee_usd, usd_amount,
+			description, token_address, token_symbol, amount, fee_eth, fee_usd, usd_amount,
 			network, tx_mode, state, block_number, timestamp, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		tx.UUID, strings.ToLower(tx.WalletAddress), tx.TxHash,
 		strings.ToLower(tx.FromAddress), strings.ToLower(tx.ToAddress),
-		strings.ToLower(tx.TokenAddress), tx.TokenSymbol, tx.Amount,
+		tx.Description, strings.ToLower(tx.TokenAddress), tx.TokenSymbol, tx.Amount,
 		tx.FeeETH, tx.FeeUSD, tx.USDAmount, tx.Network, tx.TxMode, tx.State,
 		tx.BlockNumber, tx.Timestamp, tx.CreatedAt)
 	return err
@@ -260,7 +271,7 @@ func (d *DB) UpdateTransactionState(ctx context.Context, txHash string, state st
 
 func (d *DB) ListTransactions(ctx context.Context, walletAddress string, token string, limit int, offset int) ([]TransactionRecord, error) {
 	query := `SELECT uuid, wallet_address, tx_hash, from_address, to_address,
-		token_address, token_symbol, amount, fee_eth, fee_usd, usd_amount,
+		description, token_address, token_symbol, amount, fee_eth, fee_usd, usd_amount,
 		network, tx_mode, state, block_number, timestamp, created_at
 		FROM transactions WHERE wallet_address = ?`
 	args := []any{strings.ToLower(walletAddress)}
@@ -281,7 +292,7 @@ func (d *DB) ListTransactions(ctx context.Context, walletAddress string, token s
 func (d *DB) ListAllTransactions(ctx context.Context, walletAddress string, limit int, offset int) ([]TransactionRecord, error) {
 	rows, err := d.sql.QueryContext(ctx, `
 		SELECT uuid, wallet_address, tx_hash, from_address, to_address,
-			token_address, token_symbol, amount, fee_eth, fee_usd, usd_amount,
+			description, token_address, token_symbol, amount, fee_eth, fee_usd, usd_amount,
 			network, tx_mode, state, block_number, timestamp, created_at
 		FROM transactions WHERE wallet_address = ?
 		ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
@@ -299,7 +310,7 @@ func scanTransactionRows(rows *sql.Rows) ([]TransactionRecord, error) {
 		var t TransactionRecord
 		if err := rows.Scan(
 			&t.UUID, &t.WalletAddress, &t.TxHash, &t.FromAddress, &t.ToAddress,
-			&t.TokenAddress, &t.TokenSymbol, &t.Amount, &t.FeeETH, &t.FeeUSD,
+			&t.Description, &t.TokenAddress, &t.TokenSymbol, &t.Amount, &t.FeeETH, &t.FeeUSD,
 			&t.USDAmount, &t.Network, &t.TxMode, &t.State, &t.BlockNumber,
 			&t.Timestamp, &t.CreatedAt,
 		); err != nil {
@@ -469,6 +480,148 @@ func (d *DB) ListWatchedAddresses(ctx context.Context) ([]WatchedAddress, error)
 }
 
 // ---------------------------------------------------------------------------
+// Recipients
+// ---------------------------------------------------------------------------
+
+func (d *DB) InsertRecipient(ctx context.Context, r Recipient) (Recipient, error) {
+	if d == nil || d.sql == nil {
+		return Recipient{}, errors.New("database not open")
+	}
+	now := time.Now().UnixMilli()
+	if r.UUID == "" {
+		r.UUID = newID()
+	}
+	if r.CreatedAt == 0 {
+		r.CreatedAt = now
+	}
+	r.UpdatedAt = now
+	_, err := d.sql.ExecContext(ctx, `
+		INSERT INTO recipients (
+			uuid, name, phone, phone_normalized, wallet_address, email, country, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.UUID,
+		strings.TrimSpace(r.Name),
+		strings.TrimSpace(r.Phone),
+		normalizePhone(r.Phone),
+		strings.TrimSpace(r.WalletAddress),
+		strings.TrimSpace(r.Email),
+		strings.TrimSpace(r.Country),
+		r.CreatedAt,
+		r.UpdatedAt,
+	)
+	return r, err
+}
+
+func (d *DB) UpdateRecipient(ctx context.Context, r Recipient) (Recipient, error) {
+	if d == nil || d.sql == nil {
+		return Recipient{}, errors.New("database not open")
+	}
+	if strings.TrimSpace(r.UUID) == "" {
+		return Recipient{}, errors.New("recipient uuid is required")
+	}
+	r.UpdatedAt = time.Now().UnixMilli()
+	_, err := d.sql.ExecContext(ctx, `
+		UPDATE recipients
+		SET name = ?, phone = ?, phone_normalized = ?, wallet_address = ?, email = ?, country = ?, updated_at = ?
+		WHERE uuid = ?`,
+		strings.TrimSpace(r.Name),
+		strings.TrimSpace(r.Phone),
+		normalizePhone(r.Phone),
+		strings.TrimSpace(r.WalletAddress),
+		strings.TrimSpace(r.Email),
+		strings.TrimSpace(r.Country),
+		r.UpdatedAt,
+		r.UUID,
+	)
+	return r, err
+}
+
+func (d *DB) GetRecipientByID(ctx context.Context, id string) (*Recipient, error) {
+	if d == nil || d.sql == nil {
+		return nil, errors.New("database not open")
+	}
+	var r Recipient
+	err := d.sql.QueryRowContext(ctx, `
+		SELECT uuid, name, phone, wallet_address, email, country, created_at, updated_at
+		FROM recipients WHERE uuid = ? LIMIT 1`, strings.TrimSpace(id)).
+		Scan(&r.UUID, &r.Name, &r.Phone, &r.WalletAddress, &r.Email, &r.Country, &r.CreatedAt, &r.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (d *DB) ListAllRecipients(ctx context.Context) ([]Recipient, error) {
+	if d == nil || d.sql == nil {
+		return nil, errors.New("database not open")
+	}
+	rows, err := d.sql.QueryContext(ctx, `
+		SELECT uuid, name, phone, wallet_address, email, country, created_at, updated_at
+		FROM recipients
+		ORDER BY updated_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanRecipientRows(rows)
+}
+
+func (d *DB) SearchRecipientsByName(ctx context.Context, name string) ([]Recipient, error) {
+	if d == nil || d.sql == nil {
+		return nil, errors.New("database not open")
+	}
+	pattern := "%" + strings.ToLower(strings.TrimSpace(name)) + "%"
+	rows, err := d.sql.QueryContext(ctx, `
+		SELECT uuid, name, phone, wallet_address, email, country, created_at, updated_at
+		FROM recipients
+		WHERE lower(name) LIKE ?
+		ORDER BY updated_at DESC
+		LIMIT 25`, pattern)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanRecipientRows(rows)
+}
+
+func (d *DB) SearchRecipientsByPhone(ctx context.Context, phone string) ([]Recipient, error) {
+	if d == nil || d.sql == nil {
+		return nil, errors.New("database not open")
+	}
+	normalized := normalizePhone(phone)
+	if normalized == "" {
+		return []Recipient{}, nil
+	}
+	pattern := "%" + normalized + "%"
+	rows, err := d.sql.QueryContext(ctx, `
+		SELECT uuid, name, phone, wallet_address, email, country, created_at, updated_at
+		FROM recipients
+		WHERE phone_normalized LIKE ?
+		ORDER BY updated_at DESC
+		LIMIT 25`, pattern)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanRecipientRows(rows)
+}
+
+func scanRecipientRows(rows *sql.Rows) ([]Recipient, error) {
+	var out []Recipient
+	for rows.Next() {
+		var r Recipient
+		if err := rows.Scan(&r.UUID, &r.Name, &r.Phone, &r.WalletAddress, &r.Email, &r.Country, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ---------------------------------------------------------------------------
 // FX rate methods
 // ---------------------------------------------------------------------------
 
@@ -534,6 +687,7 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 		tx_hash        TEXT NOT NULL UNIQUE,
 		from_address   TEXT NOT NULL DEFAULT '',
 		to_address     TEXT NOT NULL DEFAULT '',
+		description    TEXT NOT NULL DEFAULT '',
 		token_address  TEXT NOT NULL DEFAULT '',
 		token_symbol   TEXT NOT NULL DEFAULT '',
 		amount         TEXT NOT NULL DEFAULT '0',
@@ -574,6 +728,21 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 		rate       TEXT NOT NULL,
 		fetched_at INTEGER NOT NULL
 	);
+
+	CREATE TABLE IF NOT EXISTS recipients (
+		uuid           TEXT PRIMARY KEY,
+		name           TEXT NOT NULL DEFAULT '',
+		phone          TEXT NOT NULL DEFAULT '',
+		phone_normalized TEXT NOT NULL DEFAULT '',
+		wallet_address TEXT NOT NULL DEFAULT '',
+		email          TEXT NOT NULL DEFAULT '',
+		country        TEXT NOT NULL DEFAULT '',
+		created_at     INTEGER NOT NULL,
+		updated_at     INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS idx_recipients_name  ON recipients(name);
+	CREATE INDEX IF NOT EXISTS idx_recipients_phone ON recipients(phone);
+	CREATE INDEX IF NOT EXISTS idx_recipients_phone_norm ON recipients(phone_normalized);
 	`
 	if _, err := db.ExecContext(ctx, ddl); err != nil {
 		return err
@@ -582,6 +751,12 @@ func createSchema(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	if err := addColumnIfMissing(ctx, db, "transactions", "usd_amount", "TEXT", "''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(ctx, db, "transactions", "description", "TEXT", "''"); err != nil {
+		return err
+	}
+	if err := addColumnIfMissing(ctx, db, "recipients", "phone_normalized", "TEXT", "''"); err != nil {
 		return err
 	}
 	return nil
@@ -649,4 +824,19 @@ func zero(b []byte) {
 	for i := range b {
 		b[i] = 0
 	}
+}
+
+func normalizePhone(phone string) string {
+	trimmed := strings.TrimSpace(phone)
+	if trimmed == "" {
+		return ""
+	}
+	out := make([]byte, 0, len(trimmed))
+	for i := 0; i < len(trimmed); i++ {
+		c := trimmed[i]
+		if c >= '0' && c <= '9' {
+			out = append(out, c)
+		}
+	}
+	return string(out)
 }

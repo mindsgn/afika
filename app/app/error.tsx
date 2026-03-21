@@ -1,12 +1,13 @@
 import { useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { HapticPressable } from '@/@src/components/primatives/haptic-pressable';
 
 export default function ErrorScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { message } =  params;
-
+  
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Something broke 😬</Text>
@@ -16,9 +17,9 @@ export default function ErrorScreen() {
       </Text>
 
       <View style={styles.actions}>
-        <Pressable onPress={() => router.replace('/')}>
+        <HapticPressable onPress={() => router.replace('/')}>
           <Text style={styles.link}>Restart</Text>
-        </Pressable>
+        </HapticPressable>
       </View>
     </View>
   );

@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, TextInput, TextProps, View, ViewProps } from 'react-native';
 import { colors } from '@/@src/theme/colors';
 import { typography } from '@/@src/theme/typography';
+import { withHaptic } from '@/@src/lib/haptics';
 
 export const Screen: React.FC<ViewProps> = ({ style, children, ...rest }) => (
   <View style={[styles.screen, style]} {...rest}>
@@ -35,11 +36,14 @@ export const PrimaryButton: React.FC<{ label: string; onPress: () => void; testI
   label,
   onPress,
   testID,
-}) => (
-  <Pressable testID={testID} style={styles.button} onPress={onPress}>
-    <Text style={styles.buttonText}>{label}</Text>
-  </Pressable>
-);
+}) => {
+  const handlePress = withHaptic(onPress);
+  return (
+    <Pressable testID={testID} style={styles.button} onPress={handlePress}>
+      <Text style={styles.buttonText}>{label}</Text>
+    </Pressable>
+  );
+};
 
 const styles = StyleSheet.create({
   screen: {
@@ -86,4 +90,3 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
-

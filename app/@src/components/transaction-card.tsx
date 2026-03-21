@@ -42,6 +42,9 @@ export default function TransactionCard({ tx }: { tx: any}) {
           :
             <Ionicons style={[styles.primaryBalance, {color: "#FF225E"}]} name='arrow-down' />
         }
+        {tx.description ? (
+          <Text style={styles.secondaryBalance}>{tx.description}</Text>
+        ) : null}
         <Text style={styles.meta}>
           {tx.state} • {formatDate(tx.timestamp)}
         </Text>

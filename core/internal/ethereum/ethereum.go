@@ -68,14 +68,44 @@ const (
 
 // tokenRegistry provides built-in token configs for well-known named networks.
 var tokenRegistry = map[string][]TokenConfig{
-	"ethereum-sepolia": {
+	"eth-sepolia": {
 		{Identifier: NativeTokenIdentifier, Symbol: "ETH", Address: "", Decimals: 18, IsNative: true},
 		{Identifier: "usdc", Symbol: USDCSymbol, Address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", Decimals: USDCDecimals, IsNative: false},
 	},
-	"ethereum-mainnet": {
+	"eth-mainnet": {
 		{Identifier: NativeTokenIdentifier, Symbol: "ETH", Address: "", Decimals: 18, IsNative: true},
 		{Identifier: "usdc", Symbol: USDCSymbol, Address: "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", Decimals: USDCDecimals, IsNative: false},
 	},
+	"base-sepolia": {
+		{Identifier: NativeTokenIdentifier, Symbol: "ETH", Address: "", Decimals: 18, IsNative: true},
+		{Identifier: "usdc", Symbol: USDCSymbol, Address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", Decimals: USDCDecimals, IsNative: false},
+	},
+	"base-mainnet": {
+		{Identifier: NativeTokenIdentifier, Symbol: "ETH", Address: "", Decimals: 18, IsNative: true},
+		{Identifier: "usdc", Symbol: USDCSymbol, Address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", Decimals: USDCDecimals, IsNative: false},
+	},
+	"gnosis-chiado": {
+		{Identifier: NativeTokenIdentifier, Symbol: "XDAI", Address: "", Decimals: 18, IsNative: true},
+	},
+	"gnosis-mainnet": {
+		{Identifier: NativeTokenIdentifier, Symbol: "XDAI", Address: "", Decimals: 18, IsNative: true},
+		{Identifier: "usdc", Symbol: USDCSymbol, Address: "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83", Decimals: USDCDecimals, IsNative: false},
+	},
+}
+
+var networkAliases = map[string]string{
+	"ethereum-mainnet": "eth-mainnet",
+	"ethereum-sepolia": "eth-sepolia",
+	"base":             "base-mainnet",
+	"gnosis":           "gnosis-mainnet",
+}
+
+func normalizeNetworkKey(network string) string {
+	key := strings.ToLower(strings.TrimSpace(network))
+	if alias, ok := networkAliases[key]; ok {
+		return alias
+	}
+	return key
 }
 
 var erc20ABI = mustParseABI(`[{
@@ -359,6 +389,7 @@ func SendToken(
 		TxHash:        txHash,
 		FromAddress:   sender.Address,
 		ToAddress:     recipient,
+		Description:   describeTransfer("debit", token.Symbol, sender.Address, recipient),
 		TokenAddress:  token.Address,
 		TokenSymbol:   token.Symbol,
 		Amount:        normalizedAmount,
@@ -622,6 +653,7 @@ func FetchInboundTransfers(
 				WalletAddress: walletAddress,
 				FromAddress:   fromAddr,
 				ToAddress:     walletAddress,
+				Description:   describeTransfer("credit", token.Symbol, fromAddr, walletAddress),
 				TokenAddress:  token.Address,
 				TokenSymbol:   token.Symbol,
 				Amount:        amount,
@@ -709,6 +741,7 @@ func fetchNativeInboundViaAlchemy(
 			WalletAddress: walletAddress,
 			FromAddress:   t.From,
 			ToAddress:     walletAddress,
+			Description:   describeTransfer("credit", "ETH", t.From, walletAddress),
 			TokenAddress:  "",
 			TokenSymbol:   "ETH",
 			Amount:        amount,
@@ -722,13 +755,31 @@ func fetchNativeInboundViaAlchemy(
 	return records, nil
 }
 
+func describeTransfer(direction, symbol, fromAddr, toAddr string) string {
+	short := func(addr string) string {
+		trimmed := strings.TrimSpace(addr)
+		if len(trimmed) <= 10 {
+			return trimmed
+		}
+		return trimmed[:6] + "..." + trimmed[len(trimmed)-4:]
+	}
+	token := strings.TrimSpace(symbol)
+	if token == "" {
+		token = "asset"
+	}
+	if direction == "debit" {
+		return "Sent " + token + " to " + short(toAddr)
+	}
+	return "Received " + token + " from " + short(fromAddr)
+}
+
 // ---------------------------------------------------------------------------
 // Token registry helpers
 // ---------------------------------------------------------------------------
 
 // ListTokenConfigs returns the built-in token list for a named network.
 func ListTokenConfigs(network string) ([]TokenConfig, error) {
-	networkKey := strings.ToLower(strings.TrimSpace(network))
+	networkKey := normalizeNetworkKey(network)
 	tokens, ok := tokenRegistry[networkKey]
 	if !ok {
 		// Return native ETH only as a safe fallback for unknown networks.
@@ -760,11 +811,15 @@ func ResolveToken(tokens []TokenConfig, identifier string) (TokenConfig, error) 
 // ---------------------------------------------------------------------------
 
 func minGasReserveWei(network string) *big.Int {
-	switch strings.ToLower(strings.TrimSpace(network)) {
-	case "ethereum-mainnet":
+	switch normalizeNetworkKey(network) {
+	case "eth-mainnet":
 		return new(big.Int).SetUint64(50_000_000_000_000) // 0.00005 ETH
-	case "ethereum-sepolia":
+	case "eth-sepolia":
 		return new(big.Int).SetUint64(10_000_000_000_000) // 0.00001 ETH
+	case "base-mainnet", "base-sepolia":
+		return new(big.Int).SetUint64(5_000_000_000_000) // 0.000005 ETH
+	case "gnosis-mainnet", "gnosis-chiado":
+		return new(big.Int).SetUint64(1_000_000_000_000_000) // 0.001 xDAI
 	default:
 		return new(big.Int).SetUint64(2_000_000_000_000_000) // 0.002 ETH
 	}

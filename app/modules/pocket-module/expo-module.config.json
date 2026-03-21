@@ -1,11 +1,19 @@
 {
-  "platforms": ["apple"],
+  "platforms": ["apple", "android"],
   "apple": {
     "podspecPath": "pocket-module.podspec",
     "modules": [
       {
         "name": "PocketCore",
         "class": "PocketModule"
+      }
+    ]
+  },
+  "android": {
+    "modules": [
+      {
+        "name": "PocketCore",
+        "class": "expo.modules.pocketcore.PocketModule"
       }
     ]
   }

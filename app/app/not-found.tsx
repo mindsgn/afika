@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
-import { View, Text, StyleSheet, Alert, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
+import { HapticPressable } from '@/@src/components/primatives/haptic-pressable';
 
 export default function NotFoundScreen() {
   const router = useRouter();
@@ -23,9 +24,9 @@ export default function NotFoundScreen() {
         This screen does not exist.
       </Text>
 
-      <Pressable onPress={() => router.replace('/')}>
+      <HapticPressable onPress={() => router.replace('/')}>
         <Text style={styles.link}>Go home</Text>
-      </Pressable>
+      </HapticPressable>
     </View>
   );
 }

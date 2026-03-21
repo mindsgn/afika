@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Button, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import PocketCore from '@/modules/pocket-module';
 import { Directory, Paths } from 'expo-file-system';
+import { PrimaryButton } from '@/@src/components/Primitives';
 
 const DEFAULT_NETWORK: 'ethereum-mainnet' | 'ethereum-sepolia' = process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 'ethereum-mainnet' : 'ethereum-sepolia';
 
@@ -84,13 +85,13 @@ export default function App() {
       <TextInput style={styles.input} value={tokenIdentifier} onChangeText={setTokenIdentifier} placeholder="Token identifier (native/usdc)" autoCapitalize="none" />
       <TextInput style={styles.input} value={destination} onChangeText={setDestination} placeholder="Destination address" autoCapitalize="none" />
       <TextInput style={styles.input} value={amount} onChangeText={setAmount} placeholder="Amount (e.g. 1.50)" keyboardType="decimal-pad" />
-      <Button title="Send" onPress={onSendToken} />
+      <PrimaryButton label="Send" onPress={onSendToken} />
 
       <Text style={styles.section}>Backup</Text>
       <TextInput style={styles.input} value={passphrase} onChangeText={setPassphrase} placeholder="Backup passphrase" secureTextEntry />
-      <Button title="Export Backup" onPress={onExportBackup} />
+      <PrimaryButton label="Export Backup" onPress={onExportBackup} />
       <View style={styles.spacer} />
-      <Button title="Import Backup" onPress={onImportBackup} />
+      <PrimaryButton label="Import Backup" onPress={onImportBackup} />
       <TextInput
         style={[styles.input, styles.multiline]}
         value={backupPayload}

@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/mindsgn-studio/pocket-money-app/core/cmd/api/store"
 	"github.com/mindsgn-studio/pocket-money-app/core/cmd/api/types"
 )
@@ -52,21 +51,21 @@ func decodeSuccess[T any](t *testing.T, rec *httptest.ResponseRecorder) T {
 	return env.Data
 }
 
-// newMongoAPIForTest skips the test if POCKET_TEST_MONGO_URI is not set and
-// connects to a unique test database that is cleaned up after the test.
-func newMongoAPIForTest(t *testing.T) *API {
+// newFirestoreAPIForTest skips the test if POCKET_TEST_FIREBASE_PROJECT_ID is
+// not set. It connects to Firestore (emulator when FIRESTORE_EMULATOR_HOST is
+// set) and closes the store on cleanup.
+func newFirestoreAPIForTest(t *testing.T) *API {
 	t.Helper()
-	mongoURI := strings.TrimSpace(os.Getenv("POCKET_TEST_MONGO_URI"))
-	if mongoURI == "" {
-		t.Skip("POCKET_TEST_MONGO_URI not set; skipping MongoDB integration test")
+	projectID := strings.TrimSpace(os.Getenv("POCKET_TEST_FIREBASE_PROJECT_ID"))
+	if projectID == "" {
+		t.Skip("POCKET_TEST_FIREBASE_PROJECT_ID not set; skipping Firestore integration test")
 	}
-	dbName := "pocket_routes_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	apiStore, err := store.NewMongoAPIDatabase(ctx, mongoURI, dbName)
+	apiStore, err := store.NewFirebaseAPIDatabase(ctx, projectID, "")
 	if err != nil {
-		t.Fatalf("failed to init mongo store: %v", err)
+		t.Fatalf("failed to init firestore store: %v", err)
 	}
 	t.Cleanup(func() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -173,7 +172,7 @@ func TestGetLatestFXNotFound(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSaveAndListWalletsIntegration(t *testing.T) {
-	api := newMongoAPIForTest(t)
+	api := newFirestoreAPIForTest(t)
 
 	saveRec := performJSONRequest(t, api.SaveWallet(), http.MethodPost, "/v1/wallets", map[string]string{
 		"address": "0x000000000000000000000000000000000000dEaD",
@@ -198,7 +197,7 @@ func TestSaveAndListWalletsIntegration(t *testing.T) {
 }
 
 func TestListTransactionsEmptyIntegration(t *testing.T) {
-	api := newMongoAPIForTest(t)
+	api := newFirestoreAPIForTest(t)
 
 	rec := performJSONRequest(t, api.ListTransactions(), http.MethodGet,
 		"/v1/transactions?address=0x000000000000000000000000000000000000dEaD", nil, nil)
@@ -213,7 +212,7 @@ func TestListTransactionsEmptyIntegration(t *testing.T) {
 }
 
 func TestGetLatestFXIntegration(t *testing.T) {
-	api := newMongoAPIForTest(t)
+	api := newFirestoreAPIForTest(t)
 
 	// Manually upsert via the store adapter inside the API
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

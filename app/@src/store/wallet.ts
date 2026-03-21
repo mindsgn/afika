@@ -5,24 +5,33 @@ export type WalletTransaction = {
   hash: string;
   fromAddress: string;
   toAddress: string;
+  description?: string;
+  tokenAddress?: string;
   tokenSymbol: string;
   amount: string;
+  feeNative?: string;
   feeEth: string;
   feeUsd?: string;
+  feeZar?: string;
   usdAmount?: string;
+  zarAmount?: string;
   network: string;
   mode: string;
   direction: 'credit' | 'debit';
   state: string;
+  timestampMs?: number;
   timestamp: number;
 };
 
 export type TokenBalance = {
   symbol: string;
   address: string;
+  amount?: string;
   balance: string;
   isNative: boolean;
   usdValue?: string;
+  usdAmount?: string;
+  zarAmount?: string;
   fetchedAt?: number;
   network?: string;
 };

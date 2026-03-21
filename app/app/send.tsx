@@ -1,188 +1,186 @@
-import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
-import PocketCore from '@/modules/pocket-module';
-import { Directory, Paths } from 'expo-file-system';
-import * as SecureStore from 'expo-secure-store';
-import useWallet from '@/@src/store/wallet';
-import type { TokenBalance } from '@/@src/store/wallet';
-import { Screen, BodyText, Input, PrimaryButton } from '@/@src/components/Primitives';
-import PinAuthSheet from '@/@src/components/PinAuthSheet';
-import { verifyStoredPin } from '@/@src/lib/security/sensitiveAuth';
-import { sendUSDC, SECURE_STORE_PRIVATE_KEY } from '@/@src/lib/ethereum/sendUSDC';
+import { useRef, useState } from "react";
+import { View, StyleSheet, ActivityIndicator, Dimensions } from "react-native";
+import AmountInput from "@/@src/components/amount-input";
+import RecipientInput from "@/@src/components/recipient-input";
+import { useFxRate } from '@/@src/lib/locale/useFxRate';
 
-const DEFAULT_NETWORK: 'ethereum-mainnet' | 'ethereum-sepolia' =
-  process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 'ethereum-mainnet' : 'ethereum-sepolia';
+import { SendState, SendMethod } from "@/@src/types/send";
+import { nextState, prevState } from "@/@src/store/send";
+import { Button } from "@/@src/components/primatives/button";
+import PocketCore, { Recipient } from "@/modules/pocket-module";
+import { ensureWalletCoreReady } from "@/@src/lib/core/walletCore";
+import { sendUSDC } from "@/@src/lib/ethereum/sendUSDC";
+import useWallet from "@/@src/store/wallet";
+import BottomSheet, { BottomSheetRefProps } from "@/@src/components/bottom-sheet";
+import { Title } from "@/@src/components/primatives/title";
+import { useRouter } from "expo-router";
+import RecipientForm from "@/@src/components/recipient-form";
+import { convertLocalAmountToUsd } from "@/@src/lib/locale/currency";
 
-const USDC_ADDRESS: Record<string, string> = {
-  'ethereum-mainnet': '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-  'ethereum-sepolia': '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
-};
+export default function SendFlow() {
+  const { rate, currency } = useFxRate();
+  const router = useRouter()
+  const { network } = useWallet();
+  const [state, setState] = useState<SendState>("method");
+  const [method, setMethod] = useState<SendMethod>("ethereum");
+  const [amount, setAmount] = useState("");
+  const [usdAmount, setUsdAmount] = useState("");
+  const [destination, setDestination] = useState("");
+  const [recipientName, setRecipientName] = useState("");
+  const [recipientAddress, setRecipientAddress] = useState("");
+  const [recipientPhone, setRecipientPhone] = useState("");
+  const [recipientId, setRecipientId] = useState<string | null>(null);
+  const ref = useRef<BottomSheetRefProps>(null);
+  const onPress = () => {
+    ref.current?.scrollTo(-400); 
+  };
 
-export default function Home() {
-  const { walletAddress, setWalletAddress, setNetwork, setBalances } = useWallet();
-  const [destination, setDestination] = useState('');
-  const [amount, setAmount] = useState('');
-  const [tokenIdentifier, setTokenIdentifier] = useState<'usdc' | 'native'>('usdc');
-  const [status, setStatus] = useState('Preparing wallet...');
-  const [pinPromptVisible, setPinPromptVisible] = useState(false);
-  const authResolverRef = useRef<((ok: boolean) => void) | null>(null);
+  const next = () => setState(nextState(state));
+  const back = () => setState(prevState(state));
 
-  useEffect(() => {
-    const bootstrap = async () => {
-      try {
-        const dataDir = new Directory(Paths.document);
-        // initWalletSecure manages key material via iOS Keychain — no password arg
-        await PocketCore.initWalletSecure(dataDir.uri);
-        const address = await PocketCore.openOrCreateWallet('Main Wallet');
-        setWalletAddress(address);
-        const existingKey = await SecureStore.getItemAsync(SECURE_STORE_PRIVATE_KEY);
-        if (!existingKey) {
-          const exportedKey = await PocketCore.exportPrivateKey();
-          await SecureStore.setItemAsync(SECURE_STORE_PRIVATE_KEY, exportedKey);
-        }
+  const saveRecipient = async () => {
+    await ensureWalletCoreReady();
 
-        // Register the active network and USDC token so balance/send ops work
-        const rpcURL = DEFAULT_NETWORK === 'ethereum-mainnet'
-          ? (process.env.EXPO_PUBLIC_ALCHEMY_RPC_URL_MAINNET ?? '')
-          : (process.env.EXPO_PUBLIC_ALCHEMY_RPC_URL_SEPOLIA ?? '');
-        const chainId = DEFAULT_NETWORK === 'ethereum-mainnet' ? 1 : 11155111;
-        await PocketCore.registerNetwork(DEFAULT_NETWORK, rpcURL, chainId);
-        await PocketCore.registerToken(DEFAULT_NETWORK, 'usdc', 'USDC', USDC_ADDRESS[DEFAULT_NETWORK], 6);
-
-        // Fetch balances
-        const balJson = await PocketCore.getAllBalances(DEFAULT_NETWORK);
-        const balances = JSON.parse(balJson) as TokenBalance[];
-        setBalances(Array.isArray(balances) ? balances : []);
-        setNetwork(DEFAULT_NETWORK);
-        setStatus('Ready');
-      } catch (error) {
-        setStatus(`Init failed: ${String(error)}`);
-      }
+    const payload: Recipient = {
+      uuid: recipientId ?? "",
+      name: recipientName.trim(),
+      phone: recipientPhone.trim(),
+      walletAddress: recipientAddress,
+      email: "",
+      country: "",
+      createdAt: 0,
+      updatedAt: 0,
     };
 
-    bootstrap();
-  }, [setWalletAddress, setNetwork, setBalances]);
+    if (!payload.name) {
+      throw new Error("Name is required");
+    }
 
-  const onPinConfirm = async (pin: string): Promise<boolean> => {
-    const ok = await verifyStoredPin(pin);
-    if (!ok) return false;
-    setPinPromptVisible(false);
-    authResolverRef.current?.(true);
-    authResolverRef.current = null;
-    return true;
+    if (recipientId) {
+      const updated = await PocketCore.updateRecipient(JSON.stringify(payload));
+      const parsed = JSON.parse(updated || "{}") as Recipient;
+      if (parsed?.uuid) setRecipientId(parsed.uuid);
+    } else {
+      const saved = await PocketCore.saveRecipient(JSON.stringify(payload));
+      const parsed = JSON.parse(saved || "{}") as Recipient;
+      if (parsed?.uuid) setRecipientId(parsed.uuid);
+    }
+
+    setDestination(recipientName);
   };
 
-  const onPinCancel = () => {
-    setPinPromptVisible(false);
-    authResolverRef.current?.(false);
-    authResolverRef.current = null;
-  };
-  
-  const onSend = async () => {
+  const nextFromRecipient = async () => {
     try {
-      setStatus(`Sending ${tokenIdentifier.toUpperCase()}...`);
-      const txHash = await sendUSDC(DEFAULT_NETWORK, destination, amount);
-      setStatus(`Transfer submitted: ${txHash}`);
+      setState("sending")
+      await saveRecipient();
+     
+      const isUsd = currency === 'USD';
+      const usdcAmount = isUsd ? amount : convertLocalAmountToUsd(amount, rate);
+      if (!usdcAmount) {
+        return;
+      }
+
+      //@ts-expect-error
+      await sendUSDC(network, recipientAddress, usdcAmount);
+      setState("sent")
     } catch (error) {
       console.log(error)
-      setStatus(`Send failed: ${String(error)}`);
+      setState("error")
     }
   };
 
   return (
-    <Screen>
-      <ScrollView contentContainerStyle={styles.container} testID="home-screen">
-          <BodyText style={styles.section}>Transfer</BodyText>
-          <Input
-            testID="token-input"
-            value={tokenIdentifier}
-            onChangeText={(value) => setTokenIdentifier(value === 'native' ? 'native' : 'usdc')}
-            placeholder="Token (usdc / native)"
-            autoCapitalize="none"
+    <View style={styles.container}>
+      {state === "method" && (
+        <View style={{
+          flex: 1,
+          width: Dimensions.get("window").width,
+          paddingHorizontal: 20,
+        }}>
+          <RecipientInput
+            onPress={onPress}
+            method={method}
+            name={recipientName}
+            phone={recipientPhone}
+            onChangeName={(value) => {
+              setRecipientName(value);
+              setRecipientId(null);
+            }}
+            onChangePhone={(value) => {
+              setRecipientPhone(value);
+              setRecipientId(null);
+            }}
+            onSelectRecipient={(recipient) => {
+              setRecipientName(recipient.name || "");
+              setRecipientPhone(recipient.phone || "");
+              setRecipientAddress(recipient.walletAddress || "");
+              setRecipientId(recipient.uuid || null);
+            }}
+            next={next}
           />
-          <Input
-            testID="destination-input"
-            value={destination}
-            onChangeText={setDestination}
-            placeholder="Destination address"
-            autoCapitalize="none"
-          />
-          <Input
-            testID="amount-input"
-            value={amount}
-            onChangeText={setAmount}
-            placeholder="Amount"
-            keyboardType="decimal-pad"
-          />
+          <BottomSheet ref={ref}>
+            <RecipientForm
+              method={method}
+              setMethod={setMethod} 
+            />
+          </BottomSheet>
+        </View>
+      )}
 
-          <PrimaryButton label="Send" onPress={onSend} testID="send-button" />
-          <BodyText style={styles.status} testID="send-status">{status}</BodyText>
+      {state === "amount" && (
+        <AmountInput
+          handleCompleteSwipe={nextFromRecipient}
+          amount={amount}
+          currency="R"
+          onChange={setAmount}
+          name={recipientName}
+          phoneNumber={recipientPhone}
+        />
+      )}
 
-          <PinAuthSheet
-            visible={pinPromptVisible}
-            title="Enter PIN to confirm transfer"
-            onConfirm={onPinConfirm}
-            onCancel={onPinCancel}
+      {state === "sending" && (
+        <ActivityIndicator />
+      )}
+
+      {state === "error" && (
+        <View style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center"
+          }}
+        >
+          <Title>ERROR</Title>
+        </View>
+      )}
+
+      {state === "sent" && (
+        <View>
+          <View style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center"
+          }}>
+            <Title>SUCCESS</Title>
+          </View>
+          <Button
+            label="Done"
+            onPress={() => {
+              router.push("/(home)")
+            }}  
           />
-      </ScrollView>
-    </Screen>
+        </View>
+        
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    paddingBottom: 48,
-    gap: 10,
-  },
-  title: {
-  },
-  section: {
-    marginTop: 8,
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#224738',
-  },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#CFD8D2',
-    backgroundColor: '#FFFFFF',
-    padding: 12,
-    gap: 4,
-  },
-  cardLabel: {
-    fontSize: 12,
-    color: '#5C7265',
-    fontWeight: '700',
-  },
-  cardValue: {
-    fontSize: 12,
-    color: '#1C2C24',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#C6D2CA',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    fontSize: 13,
-  },
-  sendButton: {
-    marginTop: 4,
-    backgroundColor: '#1F7A4D',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  sendText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  status: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#294638',
+    flex: 1,
+    padding: 20,
+    paddingTop: 40,
+    justifyContent: "center",
+    alignItems: "center"
   },
 });

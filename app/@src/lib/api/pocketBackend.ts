@@ -13,11 +13,20 @@ type BackendSuccess<T> = {
   timingsMs?: Record<string, number>;
 };
 
-const BASE_URL = (process.env.EXPO_PUBLIC_POCKET_BACKEND_BASE_URL || '').trim().replace(/\/$/, '');
 const API_KEY = (process.env.EXPO_PUBLIC_POCKET_BACKEND_API_KEY || '').trim();
 
+const URLS = {
+  health:              (process.env.EXPO_PUBLIC_CF_HEALTH_URL              || '').trim(),
+  walletsSave:         (process.env.EXPO_PUBLIC_CF_WALLETS_SAVE_URL        || '').trim(),
+  walletsList:         (process.env.EXPO_PUBLIC_CF_WALLETS_LIST_URL        || '').trim(),
+  balances:            (process.env.EXPO_PUBLIC_CF_BALANCES_URL            || '').trim(),
+  transactionsList:    (process.env.EXPO_PUBLIC_CF_TRANSACTIONS_LIST_URL   || '').trim(),
+  transactionsAnnounce:(process.env.EXPO_PUBLIC_CF_TRANSACTIONS_ANNOUNCE_URL || '').trim(),
+  fxLatest:            (process.env.EXPO_PUBLIC_CF_FX_LATEST_URL           || '').trim(),
+} as const;
+
 function isConfigured() {
-  return BASE_URL.length > 0;
+  return URLS.walletsSave.length > 0 && URLS.balances.length > 0;
 }
 
 function buildHeaders() {
@@ -31,10 +40,10 @@ function buildHeaders() {
 }
 
 async function callBackend<T>(
-  path: string,
-  options?: { method?: string; body?: Record<string, unknown> },
+  url: string,
+  options?: { method?: string; body?: Record<string, unknown>; headers?: Record<string, string> },
 ): Promise<T> {
-  if (!isConfigured()) {
+  if (!url) {
     throw new Error('backend_not_configured');
   }
 
@@ -43,9 +52,12 @@ async function callBackend<T>(
 
   try {
     const method = options?.method ?? (options?.body ? 'POST' : 'GET');
-    const response = await fetch(`${BASE_URL}${path}`, {
+    const response = await fetch(url, {
       method,
-      headers: buildHeaders(),
+      headers: {
+        ...buildHeaders(),
+        ...(options?.headers ?? {}),
+      },
       body: options?.body ? JSON.stringify(options.body) : undefined,
       signal: controller.signal,
     });
@@ -68,12 +80,20 @@ export type BackendWallet = {
   address: string;
   network: string;
   createdAt: number;
+  phoneNumber?: string;
+  isVerified?: boolean;
+  userLevel?: 'level0' | 'level1';
+  phoneLinkedAt?: number;
+  gasGiftSent?: boolean;
 };
 
 export type BackendTokenBalance = {
   tokenSymbol: string;
   tokenAddress: string;
+  amount?: string;
   balance: string;
+  usdAmount?: string;
+  zarAmount?: string;
   usdValue: string;
   network: string;
   fetchedAt: number;
@@ -83,15 +103,22 @@ export type BackendTransaction = {
   txHash: string;
   fromAddress: string;
   toAddress: string;
+  description?: string;
+  tokenAddress?: string;
   tokenSymbol: string;
   amount: string;
-  feeETH: string;
+  feeNative?: string;
+  feeETH?: string;
+  feeBase?: string;
   feeUsd?: string;
+  feeZar?: string;
   usdAmount?: string;
+  zarAmount?: string;
   network: string;
   direction: 'debit' | 'credit';
   state: string;
   blockNumber: number;
+  timestampMs?: number;
   timestamp: number;
 };
 
@@ -105,20 +132,40 @@ export const pocketBackend = {
   isConfigured,
 
   async health() {
-    return callBackend<{ ok: boolean; service: string; version: string; timestamp: string }>('/health');
+    return callBackend<{ ok: boolean; service: string; version: string; timestamp: string }>(
+      URLS.health,
+    );
   },
 
   /** Register a wallet address for balance and transaction tracking on the backend. */
-  async saveWallet(address: string, network: string) {
-    return callBackend<{ address: string; network: string }>('/v1/wallets', {
+  async saveWallet(address: string, network: string, options?: { phoneNumber?: string; isVerified?: boolean }) {
+    return callBackend<BackendWallet>(URLS.walletsSave, {
       method: 'POST',
-      body: { address, network },
+      body: {
+        address,
+        network,
+        ...(options?.phoneNumber ? { phoneNumber: options.phoneNumber } : {}),
+        ...(typeof options?.isVerified === 'boolean' ? { isVerified: options.isVerified } : {}),
+      },
+    });
+  },
+
+  async linkPhoneNumber(address: string, network: string, phoneNumber: string, firebaseIdToken?: string) {
+    return callBackend<BackendWallet>(URLS.walletsSave, {
+      method: 'POST',
+      body: {
+        address,
+        network,
+        phoneNumber,
+        isVerified: true,
+      },
+      headers: firebaseIdToken ? { Authorization: `Bearer ${firebaseIdToken}` } : {},
     });
   },
 
   /** List all tracked wallet addresses. */
   async listWallets() {
-    return callBackend<{ wallets: BackendWallet[] }>('/v1/wallets/');
+    return callBackend<{ wallets: BackendWallet[] }>(URLS.walletsList);
   },
 
   /** Fetch the latest cached balances for an address, optionally filtered by network. */
@@ -126,7 +173,7 @@ export const pocketBackend = {
     const params = new URLSearchParams({ address });
     if (network) params.set('network', network);
     return callBackend<{ address: string; network: string; balances: BackendTokenBalance[] }>(
-      `/v1/balances?${params.toString()}`,
+      `${URLS.balances}?${params.toString()}`,
     );
   },
 
@@ -140,13 +187,31 @@ export const pocketBackend = {
     if (options?.limit != null) params.set('limit', String(options.limit));
     if (options?.offset != null) params.set('offset', String(options.offset));
     return callBackend<{ transactions: BackendTransaction[]; total: number; limit: number; offset: number }>(
-      `/v1/transactions?${params.toString()}`,
+      `${URLS.transactionsList}?${params.toString()}`,
+    );
+  },
+
+  /** Announce a newly submitted transaction so recipients get realtime updates. */
+  async announceTransaction(payload: {
+    txHash: string;
+    fromAddress: string;
+    toAddress: string;
+    tokenSymbol: string;
+    amount: string;
+    network: string;
+    tokenAddress?: string;
+    timestampMs?: number;
+    timestamp?: number;
+  }) {
+    return callBackend<{ txHash: string; network: string; timestamp: number; announced: boolean }>(
+      URLS.transactionsAnnounce,
+      { method: 'POST', body: payload },
     );
   },
 
   /** Fetch the latest cached FX rate for a currency pair (e.g. "USD/ZAR"). */
   async getFXRate(pair: string) {
     const params = new URLSearchParams({ pair });
-    return callBackend<BackendFXRate>(`/v1/fx/latest?${params.toString()}`);
+    return callBackend<BackendFXRate>(`${URLS.fxLatest}?${params.toString()}`);
   },
 };

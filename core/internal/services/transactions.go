@@ -24,6 +24,7 @@ type TxRecord struct {
 	TxHash        string
 	FromAddress   string
 	ToAddress     string
+	Description   string
 	TokenAddress  string
 	TokenSymbol   string
 	Amount        string
@@ -240,6 +241,7 @@ func fetchAssetTransfers(
 			TxHash:        t.Hash,
 			FromAddress:   strings.ToLower(t.From),
 			ToAddress:     strings.ToLower(t.To),
+			Description:   DescribeTransfer(direction, t.Asset, t.From, t.To),
 			TokenAddress:  strings.ToLower(t.RawContract.Address),
 			TokenSymbol:   t.Asset,
 			Amount:        amount,
@@ -254,6 +256,25 @@ func fetchAssetTransfers(
 		})
 	}
 	return records, nil
+}
+
+// DescribeTransfer builds a user-friendly description for a transfer.
+func DescribeTransfer(direction, symbol, fromAddr, toAddr string) string {
+	short := func(addr string) string {
+		trimmed := strings.TrimSpace(addr)
+		if len(trimmed) <= 10 {
+			return trimmed
+		}
+		return trimmed[:6] + "..." + trimmed[len(trimmed)-4:]
+	}
+	token := strings.TrimSpace(symbol)
+	if token == "" {
+		token = "asset"
+	}
+	if direction == "debit" {
+		return "Sent " + token + " to " + short(toAddr)
+	}
+	return "Received " + token + " from " + short(fromAddr)
 }
 
 // fetchTxFee fetches the gas used × gas price from the tx receipt.

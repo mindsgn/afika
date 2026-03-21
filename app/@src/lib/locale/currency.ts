@@ -32,3 +32,16 @@ export function convertUSD(usdString: string, fxRate: number): number | null {
   }
   return value * fxRate;
 }
+
+// convertLocalAmountToUsd converts a localized currency string into USD amount.
+// fxRate is USD/{local} (e.g. USD/ZAR = 18.5).
+export function convertLocalAmountToUsd(amount: string, fxRate: number): string | null {
+  if (!amount || fxRate <= 0) return null;
+  const normalized = amount.replace(/,/g, '').trim();
+  const value = Number(normalized);
+  if (!Number.isFinite(value)) return null;
+  const usd = value / fxRate;
+  if (!Number.isFinite(usd) || usd <= 0) return null;
+  const fixed = usd.toFixed(6);
+  return fixed.replace(/\.?0+$/, '');
+}

@@ -138,6 +138,12 @@ public final class PocketModule: Module {
       }
     }
 
+    AsyncFunction("upsertBalanceSnapshots") { (jsonPayload: String) throws in
+      try self.callVoid { core in
+        try core.upsertBalanceSnapshots(jsonPayload)
+      }
+    }
+
     AsyncFunction("getPriceHistory") { (networkName: String, limit: Int) throws -> String in
       try self.callString { core, err in
         core.getPriceHistory(networkName, limit: limit, error: &err)
@@ -172,6 +178,44 @@ public final class PocketModule: Module {
       }
     }
 
+    // ---- Recipients --------------------------------------------------------
+
+    AsyncFunction("saveRecipient") { (jsonPayload: String) throws -> String in
+      try self.callString { core, err in
+        core.saveRecipient(jsonPayload, error: &err)
+      }
+    }
+
+    AsyncFunction("getRecipient") { (id: String) throws -> String in
+      try self.callString { core, err in
+        core.getRecipient(id, error: &err)
+      }
+    }
+
+    AsyncFunction("getAllRecipients") { () throws -> String in
+      try self.callString { core, err in
+        core.getAllRecipients(&err)
+      }
+    }
+
+    AsyncFunction("searchRecipientsByName") { (name: String) throws -> String in
+      try self.callString { core, err in
+        core.searchRecipients(byName: name, error: &err)
+      }
+    }
+
+    AsyncFunction("searchRecipientsByPhone") { (phone: String) throws -> String in
+      try self.callString { core, err in
+        core.searchRecipients(byPhone: phone, error: &err)
+      }
+    }
+
+    AsyncFunction("updateRecipient") { (jsonPayload: String) throws -> String in
+      try self.callString { core, err in
+        core.updateRecipient(jsonPayload, error: &err)
+      }
+    }
+
     // ---- Sending ------------------------------------------------------------
 
     AsyncFunction("sendToken") { (networkName: String, tokenIdentifier: String, recipient: String, amount: String) throws -> String in
@@ -203,6 +247,12 @@ public final class PocketModule: Module {
     AsyncFunction("listAllTransactions") { (networkName: String, limit: Int, offset: Int) throws -> String in
       try self.callString { core, err in
         core.listAllTransactions(networkName, limit: limit, offset: offset, error: &err)
+      }
+    }
+
+    AsyncFunction("upsertTransactions") { (jsonPayload: String) throws in
+      try self.callVoid { core in
+        try core.upsertTransactions(jsonPayload)
       }
     }
 

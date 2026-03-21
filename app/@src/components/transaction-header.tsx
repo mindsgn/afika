@@ -3,7 +3,6 @@ import { Title } from './primatives/title';
 import { SubButton } from './primatives/sub-button';
 
 export default function TransactionHeader() {
-  
   return (
     <View style={styles.card}>
       <Title>{"TRANSACTIONS"}</Title>

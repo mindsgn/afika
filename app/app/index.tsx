@@ -9,6 +9,7 @@ export default function App() {
 
   const getSecureKey = async () => {
     let result = await SecureStore.getItemAsync("onboarded");
+
     if (result) {
       router.replace('/(onboarding)/password');
     } else {
@@ -29,7 +30,7 @@ export default function App() {
 
 const styles = StyleSheet.create({
   container: {
-    flex:1,
-    alignSelf: "center"
+    flex: 1,
+    alignSelf: "center",
   },
 });

@@ -33,6 +33,9 @@ func sanitizeError(err error) error {
 	if err == nil {
 		return nil
 	}
+	if errors.Is(err, ErrNotInitialized) {
+		return ErrNotInitialized
+	}
 	return errors.New(err.Error())
 }
 
@@ -52,6 +55,7 @@ type Transaction struct {
 	Hash        string `json:"hash"`
 	FromAddress string `json:"fromAddress"`
 	ToAddress   string `json:"toAddress"`
+	Description string `json:"description"`
 	TokenSymbol string `json:"tokenSymbol"`
 	Amount      string `json:"amount"`
 	FeeETH      string `json:"feeEth"`
@@ -74,12 +78,13 @@ type TokenBalance struct {
 
 // BalanceSnapshot represents the latest balance state with USD value.
 type BalanceSnapshot struct {
-	TokenAddress string `json:"tokenAddress"`
-	TokenSymbol  string `json:"tokenSymbol"`
-	Balance      string `json:"balance"`
-	USDValue     string `json:"usdValue"`
-	Network      string `json:"network"`
-	FetchedAt    int64  `json:"fetchedAt"`
+	WalletAddress string `json:"walletAddress"`
+	TokenAddress  string `json:"tokenAddress"`
+	TokenSymbol   string `json:"tokenSymbol"`
+	Balance       string `json:"balance"`
+	USDValue      string `json:"usdValue"`
+	Network       string `json:"network"`
+	FetchedAt     int64  `json:"fetchedAt"`
 }
 
 // FXRate is a gomobile-friendly FX rate record.
@@ -87,6 +92,18 @@ type FXRate struct {
 	Pair      string `json:"pair"`
 	Rate      string `json:"rate"`
 	FetchedAt int64  `json:"fetchedAt"`
+}
+
+// Recipient is a gomobile-friendly recipient record.
+type Recipient struct {
+	UUID          string `json:"uuid"`
+	Name          string `json:"name"`
+	Phone         string `json:"phone"`
+	WalletAddress string `json:"walletAddress"`
+	Email         string `json:"email"`
+	Country       string `json:"country"`
+	CreatedAt     int64  `json:"createdAt"`
+	UpdatedAt     int64  `json:"updatedAt"`
 }
 
 // ---------------------------------------------------------------------------
@@ -476,12 +493,13 @@ func (w *WalletCore) SyncBalances(networkName string) (string, error) {
 		})
 
 		out = append(out, BalanceSnapshot{
-			TokenAddress: tokenAddress,
-			TokenSymbol:  t.Symbol,
-			Balance:      bal,
-			USDValue:     usdValue,
-			Network:      networkName,
-			FetchedAt:    time.Now().UnixMilli(),
+			WalletAddress: wallets[0].Address,
+			TokenAddress:  tokenAddress,
+			TokenSymbol:   t.Symbol,
+			Balance:       bal,
+			USDValue:      usdValue,
+			Network:       networkName,
+			FetchedAt:     time.Now().UnixMilli(),
 		})
 	}
 
@@ -513,12 +531,13 @@ func (w *WalletCore) GetLatestBalances(networkName string) (string, error) {
 	out := make([]BalanceSnapshot, 0, len(rows))
 	for _, b := range rows {
 		out = append(out, BalanceSnapshot{
-			TokenAddress: b.TokenAddress,
-			TokenSymbol:  b.TokenSymbol,
-			Balance:      b.Balance,
-			USDValue:     b.USDValue,
-			Network:      b.Network,
-			FetchedAt:    b.FetchedAt,
+			WalletAddress: wallets[0].Address,
+			TokenAddress:  b.TokenAddress,
+			TokenSymbol:   b.TokenSymbol,
+			Balance:       b.Balance,
+			USDValue:      b.USDValue,
+			Network:       b.Network,
+			FetchedAt:     b.FetchedAt,
 		})
 	}
 	encoded, err := json.Marshal(out)
@@ -526,6 +545,55 @@ func (w *WalletCore) GetLatestBalances(networkName string) (string, error) {
 		return "", sanitizeError(err)
 	}
 	return string(encoded), nil
+}
+
+// UpsertBalanceSnapshots stores balance snapshots into the local database.
+// jsonPayload must be a JSON array matching BalanceSnapshot.
+func (w *WalletCore) UpsertBalanceSnapshots(jsonPayload string) error {
+	db, err := w.getDB()
+	if err != nil {
+		return sanitizeError(err)
+	}
+	var items []BalanceSnapshot
+	if err := json.Unmarshal([]byte(jsonPayload), &items); err != nil {
+		return sanitizeError(err)
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	wallets, err := db.ListWallets(context.Background())
+	if err != nil {
+		return sanitizeError(err)
+	}
+	defaultAddress := ""
+	if len(wallets) > 0 {
+		defaultAddress = wallets[0].Address
+	}
+	now := time.Now().UnixMilli()
+	for _, item := range items {
+		// Balance snapshots don't always include wallet address; fallback to primary wallet.
+		address := strings.TrimSpace(item.WalletAddress)
+		if address == "" {
+			address = defaultAddress
+		}
+		if address == "" {
+			continue
+		}
+		fetchedAt := item.FetchedAt
+		if fetchedAt == 0 {
+			fetchedAt = now
+		}
+		_, _ = db.InsertBalanceHistoryIfChanged(context.Background(), database.BalanceHistory{
+			WalletAddress: address,
+			Network:       item.Network,
+			TokenAddress:  item.TokenAddress,
+			TokenSymbol:   item.TokenSymbol,
+			Balance:       item.Balance,
+			USDValue:      item.USDValue,
+			FetchedAt:     fetchedAt,
+		})
+	}
+	return nil
 }
 
 // GetPriceHistory returns balance history records from the local database as JSON.
@@ -622,6 +690,227 @@ func (w *WalletCore) ListWatchedAddresses() (string, error) {
 		return "", sanitizeError(err)
 	}
 	encoded, err := json.Marshal(addrs)
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	return string(encoded), nil
+}
+
+// ---------------------------------------------------------------------------
+// Recipients
+// ---------------------------------------------------------------------------
+
+// SaveRecipient inserts a recipient record from JSON and returns saved recipient as JSON.
+func (w *WalletCore) SaveRecipient(jsonPayload string) (string, error) {
+	db, err := w.getDB()
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	var r Recipient
+	if err := json.Unmarshal([]byte(jsonPayload), &r); err != nil {
+		return "", sanitizeError(err)
+	}
+	if strings.TrimSpace(r.Name) == "" {
+		return "", sanitizeError(errors.New("name is required"))
+	}
+	saved, err := db.InsertRecipient(context.Background(), database.Recipient{
+		UUID:          r.UUID,
+		Name:          r.Name,
+		Phone:         r.Phone,
+		WalletAddress: r.WalletAddress,
+		Email:         r.Email,
+		Country:       r.Country,
+		CreatedAt:     r.CreatedAt,
+		UpdatedAt:     r.UpdatedAt,
+	})
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	encoded, err := json.Marshal(Recipient{
+		UUID:          saved.UUID,
+		Name:          saved.Name,
+		Phone:         saved.Phone,
+		WalletAddress: saved.WalletAddress,
+		Email:         saved.Email,
+		Country:       saved.Country,
+		CreatedAt:     saved.CreatedAt,
+		UpdatedAt:     saved.UpdatedAt,
+	})
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	return string(encoded), nil
+}
+
+// GetRecipient returns a recipient by ID as JSON (or "" if not found).
+func (w *WalletCore) GetRecipient(id string) (string, error) {
+	db, err := w.getDB()
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	if strings.TrimSpace(id) == "" {
+		return "", sanitizeError(errors.New("recipient id is required"))
+	}
+	item, err := db.GetRecipientByID(context.Background(), id)
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	if item == nil {
+		return "", nil
+	}
+	encoded, err := json.Marshal(Recipient{
+		UUID:          item.UUID,
+		Name:          item.Name,
+		Phone:         item.Phone,
+		WalletAddress: item.WalletAddress,
+		Email:         item.Email,
+		Country:       item.Country,
+		CreatedAt:     item.CreatedAt,
+		UpdatedAt:     item.UpdatedAt,
+	})
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	return string(encoded), nil
+}
+
+// GetAllRecipients returns all recipients as JSON.
+func (w *WalletCore) GetAllRecipients() (string, error) {
+	db, err := w.getDB()
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	items, err := db.ListAllRecipients(context.Background())
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	out := make([]Recipient, 0, len(items))
+	for _, item := range items {
+		out = append(out, Recipient{
+			UUID:          item.UUID,
+			Name:          item.Name,
+			Phone:         item.Phone,
+			WalletAddress: item.WalletAddress,
+			Email:         item.Email,
+			Country:       item.Country,
+			CreatedAt:     item.CreatedAt,
+			UpdatedAt:     item.UpdatedAt,
+		})
+	}
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	return string(encoded), nil
+}
+
+// SearchRecipientsByName returns recipients whose name matches (case-insensitive contains).
+func (w *WalletCore) SearchRecipientsByName(name string) (string, error) {
+	db, err := w.getDB()
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	if strings.TrimSpace(name) == "" {
+		encoded, _ := json.Marshal([]Recipient{})
+		return string(encoded), nil
+	}
+	items, err := db.SearchRecipientsByName(context.Background(), name)
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	out := make([]Recipient, 0, len(items))
+	for _, item := range items {
+		out = append(out, Recipient{
+			UUID:          item.UUID,
+			Name:          item.Name,
+			Phone:         item.Phone,
+			WalletAddress: item.WalletAddress,
+			Email:         item.Email,
+			Country:       item.Country,
+			CreatedAt:     item.CreatedAt,
+			UpdatedAt:     item.UpdatedAt,
+		})
+	}
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	return string(encoded), nil
+}
+
+// SearchRecipientsByPhone returns recipients whose phone matches (contains).
+func (w *WalletCore) SearchRecipientsByPhone(phone string) (string, error) {
+	db, err := w.getDB()
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	if strings.TrimSpace(phone) == "" {
+		encoded, _ := json.Marshal([]Recipient{})
+		return string(encoded), nil
+	}
+	items, err := db.SearchRecipientsByPhone(context.Background(), phone)
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	out := make([]Recipient, 0, len(items))
+	for _, item := range items {
+		out = append(out, Recipient{
+			UUID:          item.UUID,
+			Name:          item.Name,
+			Phone:         item.Phone,
+			WalletAddress: item.WalletAddress,
+			Email:         item.Email,
+			Country:       item.Country,
+			CreatedAt:     item.CreatedAt,
+			UpdatedAt:     item.UpdatedAt,
+		})
+	}
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	return string(encoded), nil
+}
+
+// UpdateRecipient updates a recipient record from JSON and returns updated recipient as JSON.
+func (w *WalletCore) UpdateRecipient(jsonPayload string) (string, error) {
+	db, err := w.getDB()
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	var r Recipient
+	if err := json.Unmarshal([]byte(jsonPayload), &r); err != nil {
+		return "", sanitizeError(err)
+	}
+	if strings.TrimSpace(r.UUID) == "" {
+		return "", sanitizeError(errors.New("recipient uuid is required"))
+	}
+	if strings.TrimSpace(r.Name) == "" {
+		return "", sanitizeError(errors.New("name is required"))
+	}
+	updated, err := db.UpdateRecipient(context.Background(), database.Recipient{
+		UUID:          r.UUID,
+		Name:          r.Name,
+		Phone:         r.Phone,
+		WalletAddress: r.WalletAddress,
+		Email:         r.Email,
+		Country:       r.Country,
+		CreatedAt:     r.CreatedAt,
+		UpdatedAt:     r.UpdatedAt,
+	})
+	if err != nil {
+		return "", sanitizeError(err)
+	}
+	encoded, err := json.Marshal(Recipient{
+		UUID:          updated.UUID,
+		Name:          updated.Name,
+		Phone:         updated.Phone,
+		WalletAddress: updated.WalletAddress,
+		Email:         updated.Email,
+		Country:       updated.Country,
+		CreatedAt:     updated.CreatedAt,
+		UpdatedAt:     updated.UpdatedAt,
+	})
 	if err != nil {
 		return "", sanitizeError(err)
 	}
@@ -755,6 +1044,88 @@ func (w *WalletCore) ListAllTransactions(networkName string, limit, offset int) 
 	return marshalTransactions(items, wallets[0].Address)
 }
 
+// UpsertTransactions stores transaction snapshots into the local database.
+// jsonPayload must be a JSON array matching the backend transaction schema.
+func (w *WalletCore) UpsertTransactions(jsonPayload string) error {
+	db, err := w.getDB()
+	if err != nil {
+		return sanitizeError(err)
+	}
+	var items []struct {
+		WalletAddress string `json:"walletAddress"`
+		TxHash        string `json:"txHash"`
+		FromAddress   string `json:"fromAddress"`
+		ToAddress     string `json:"toAddress"`
+		Description   string `json:"description"`
+		TokenAddress  string `json:"tokenAddress"`
+		TokenSymbol   string `json:"tokenSymbol"`
+		Amount        string `json:"amount"`
+		FeeNative     string `json:"feeNative"`
+		FeeETH        string `json:"feeEth"`
+		FeeUSD        string `json:"feeUsd"`
+		USDAmount     string `json:"usdAmount"`
+		Network       string `json:"network"`
+		Direction     string `json:"direction"`
+		State         string `json:"state"`
+		BlockNumber   uint64 `json:"blockNumber"`
+		TimestampMs   int64  `json:"timestampMs"`
+		Timestamp     int64  `json:"timestamp"`
+	}
+	if err := json.Unmarshal([]byte(jsonPayload), &items); err != nil {
+		return sanitizeError(err)
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	wallets, err := db.ListWallets(context.Background())
+	if err != nil {
+		return sanitizeError(err)
+	}
+	defaultAddress := ""
+	if len(wallets) > 0 {
+		defaultAddress = wallets[0].Address
+	}
+	for _, item := range items {
+		walletAddress := strings.TrimSpace(item.WalletAddress)
+		if walletAddress == "" {
+			walletAddress = defaultAddress
+		}
+		if walletAddress == "" || strings.TrimSpace(item.TxHash) == "" {
+			continue
+		}
+		timestampMs := item.TimestampMs
+		if timestampMs == 0 {
+			timestampMs = item.Timestamp
+		}
+		if timestampMs > 0 && timestampMs < 1_000_000_000_000 {
+			timestampMs *= 1000
+		}
+		feeNative := strings.TrimSpace(item.FeeNative)
+		if feeNative == "" {
+			feeNative = item.FeeETH
+		}
+		_ = db.InsertTransactionIfMissing(context.Background(), database.TransactionRecord{
+			WalletAddress: walletAddress,
+			TxHash:        item.TxHash,
+			FromAddress:   item.FromAddress,
+			ToAddress:     item.ToAddress,
+			Description:   item.Description,
+			TokenAddress:  item.TokenAddress,
+			TokenSymbol:   item.TokenSymbol,
+			Amount:        item.Amount,
+			FeeETH:        feeNative,
+			FeeUSD:        item.FeeUSD,
+			USDAmount:     item.USDAmount,
+			Network:       item.Network,
+			TxMode:        "backend",
+			State:         item.State,
+			BlockNumber:   item.BlockNumber,
+			Timestamp:     timestampMs,
+		})
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Backup / restore
 // ---------------------------------------------------------------------------
@@ -854,7 +1225,7 @@ func (w *WalletCore) resolveNetwork(name string) (NetworkConfig, string, error) 
 		return NetworkConfig{}, "", fmt.Errorf("network %q not registered; call RegisterNetwork first", name)
 	}
 	if net.RPCURL == "" {
-		return NetworkConfig{}, "", fmt.Errorf("network %q has no RPC URL", name)
+		return NetworkConfig{}, "", fmt.Errorf("network %q has no rpcURL", name)
 	}
 	return net, net.RPCURL, nil
 }
@@ -901,6 +1272,7 @@ func marshalTransactions(items []database.TransactionRecord, walletAddress strin
 			Hash:        item.TxHash,
 			FromAddress: item.FromAddress,
 			ToAddress:   item.ToAddress,
+			Description: item.Description,
 			TokenSymbol: item.TokenSymbol,
 			Amount:      item.Amount,
 			FeeETH:      item.FeeETH,
