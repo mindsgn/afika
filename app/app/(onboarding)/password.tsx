@@ -14,6 +14,7 @@ import useWallet from '@/@src/store/wallet';
 import { pocketBackend } from '@/@src/lib/api/pocketBackend';
 import { Screen } from '@/@src/components/primatives/screen';
 import { Title } from '@/@src/components/primatives/title';
+import { HapticPressable } from '@/@src/components/primatives/haptic-pressable';
 
 const PIN_LENGTH = 5;
 const DEFAULT_NETWORK: 'ethereum-mainnet' | 'ethereum-sepolia' =

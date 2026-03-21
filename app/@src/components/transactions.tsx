@@ -6,9 +6,11 @@ import EmptyTransactionCard from './empty-transaction-card';
 import TransactionCard from './transaction-card';
 import TransactionHeader from './transaction-header';
 import { WalletTransaction } from '../store/wallet';
+import { pocketBackend } from '../lib/api/pocketBackend';
+import { useEffect } from 'react';
 
 export default function TransactionList() {
-  const { transactions } = useWallet();
+  const { transactions, setTransactions, walletAddress } = useWallet();
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -19,7 +21,6 @@ export default function TransactionList() {
         const transactionList = transactions as WalletTransaction[];
         setTransactions(transactionList)
       } catch {
-        //get local sql
       }
     };
 

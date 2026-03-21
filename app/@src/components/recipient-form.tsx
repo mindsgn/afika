@@ -3,13 +3,14 @@ import { Title }  from "@/@src/components/primatives/title"
 import { Button }  from "@/@src/components/primatives/button"
 import { TextInput,  } from "react-native";
 import MethodSelector from "./selector";
+import { SendMethod } from "../types/send";
 
 export default function RecipientForm({
   method,
   setMethod
 }:{
-  method: string,
-  setMethod: () => void
+  method: SendMethod,
+  setMethod: (method: SendMethod) => void
 }) {
   
   const saveRecipeint = async() => {

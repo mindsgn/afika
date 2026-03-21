@@ -3,16 +3,15 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import useWallet from '../store/wallet';
 import { formatCurrency, convertUSD } from '@/@src/lib/locale/currency';
 import { useFxRate } from '@/@src/lib/locale/useFxRate';
-import { Card } from './primatives/card';
 import { Balance } from './primatives/balance';
+import { Card } from './primatives/card';
 
 export default function WalletCard() {
   const { walletAddress, balances } = useWallet();
   const { locale, currency, rate } = useFxRate();
   const [usdcBalance, setUsdcBalance] = useState(0);
   const [displayBalance, setDisplayBalance] = useState('');
-  const backendStatus = useBackendStatus(walletAddress);
-
+  
   const usdcValue = useMemo(() => {
     const usdc = balances.find((b) => b.symbol === 'USDC');
     if (!usdc) return 0;

@@ -119,7 +119,7 @@ export default function SendFlow() {
             next={next}
           />
           <BottomSheet ref={ref}>
-            <RecipientForms
+            <RecipientForm
               method={method}
               setMethod={setMethod} 
             />
