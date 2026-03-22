@@ -1,0 +1,44 @@
+appId: mindsgn.studio.pockt
+---
+- launchApp
+- startRecording: recording 
+- waitForAnimationToEnd:
+    timeout: 3000
+- extendedWaitUntil:
+    visible: "ENTER PIN"
+    timeout: 10000
+- tapOn: "1" 
+- tapOn: "1" 
+- tapOn: "1" 
+- tapOn: "1" 
+- tapOn: "1" 
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "SEND"
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn:
+    id: pressable-0
+- tapOn: 
+    id: "pressable-1"
+    delay: 2000 
+- tapOn: 
+    id: "pressable-0"
+    delay: 2000
+- tapOn: 
+    id: "pressable-dot"
+    delay: 2000
+- tapOn: 
+    id: "pressable-5"
+    delay: 2000
+- tapOn: 
+    id: "pressable-9"
+    delay: 2000
+- swipe:
+    from:
+        id: "swipe-button"
+    direction: RIGHT
+- extendedWaitUntil:
+    visible: "SUCCESS"
+    timeout: 20000
+- stopRecording

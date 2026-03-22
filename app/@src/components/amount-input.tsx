@@ -7,7 +7,7 @@ import { useFxRate } from "@/@src/lib/locale/useFxRate";
 import { useState } from "react";
 import { formatCurrency, convertUSD } from '@/@src/lib/locale/currency';
 import { useMemo, useEffect } from "react";
-import SwipeButton from "@/@src/components/swipeButton";
+import SwipeButton from "@/@src/components/swipe-button";
 import {
   useSharedValue,
   useAnimatedStyle,

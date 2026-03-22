@@ -19,7 +19,7 @@ export default function SwipeButton({
         <Animated.View style={[styles.track, trackStyle]}>
           <Text style={styles.trackText}>Swipe to Send →</Text>
         </Animated.View>
-        <Animated.View style={[styles.thumb, animatedStyle]}>
+        <Animated.View style={[styles.thumb, animatedStyle]} testID={'swipe-button'}>
           <Text style={styles.thumbText}>→</Text>
         </Animated.View>
       </View>

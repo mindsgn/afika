@@ -1,0 +1,14 @@
+appId: mindsgn.studio.pockt
+---
+- launchApp
+- startRecording: recording 
+- waitForAnimationToEnd:
+    timeout: 2000
+- tapOn: "1" 
+- tapOn: "1" 
+- tapOn: "1" 
+- tapOn: "1" 
+- tapOn: "1" 
+- waitForAnimationToEnd:
+    timeout: 3000
+- stopRecording

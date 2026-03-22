@@ -25,7 +25,7 @@ export default function App() {
   useEffect(() => { 
     const bootstrapWallet = async () => {
       const dataDir = new Directory(Paths.document);
-      const password = 'dev-password-change-me'
+      // const password = 'dev-password-change-me'
 
       try {
         await PocketCore.initWalletSecure(dataDir.uri)

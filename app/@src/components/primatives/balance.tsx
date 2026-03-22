@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, TextProps } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import { colors } from '@/@src/theme/colors';
 import { typography } from '@/@src/theme/typography';
 
@@ -11,7 +11,7 @@ const styles = StyleSheet.create({
   title: {
       color: colors.textPrimary,
       ...typography.title,
-      marginVertical: 20,
+      marginVertical: 10,
   },
 });
 

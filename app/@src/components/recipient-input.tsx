@@ -48,21 +48,6 @@ export default function RecipientInput({
   onPress:() => void;
 }) {
   const [suggestions, setSuggestions] = useState<Recipient[]>([]);
-  const [label, setLabel] = useState<string>("Phone number");
-  
-  const phonePlaceholder = useMemo(() => {
-    if (method === "phone") return "+27...";
-    if (method === "email") return "email@example.com";
-    if (method === "ethereum") return "0x...";
-    return "Phone number";
-  }, [method]);
-
-  const labelPlaceholder = useMemo(() => {
-    if (method === "phone") return "+27...";
-    if (method === "email") return "email@example.com";
-    if (method === "ethereum") return "0x...";
-    return "Phone number";
-  }, [method]);
 
   useEffect(() => {
     const getAll = async() => {
@@ -82,7 +67,7 @@ export default function RecipientInput({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View></View>
+        <View />
         <TouchableOpacity 
           onPress={onPress}
         >
@@ -92,10 +77,11 @@ export default function RecipientInput({
       <View>
         {suggestions.length > 0 && (
           <View style={styles.suggestions}>
-            {suggestions.map((item) => {
+            {suggestions.map((item, index) => {
               if (item.phone === "" && item.walletAddress === "")  return null
               return(
                   <HapticPressable
+                    testID={`pressable-${index}`}
                     key={item.uuid}
                     style={styles.suggestionItem}
                     onPress={() => {

@@ -1,6 +1,6 @@
 // components/send/AmountKeypad.tsx
 
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, Pressable } from "react-native";
 import { HapticPressable } from "@/@src/components/primatives/haptic-pressable";
 
 const keys = ["1","2","3","4","5","6","7","8","9",".","0","⌫"];
@@ -10,13 +10,21 @@ export default function AmountKeypad({
 }: {
   onPress: (value: string) => void;
 }) {
+  
   return (
     <View style={styles.grid}>
-      {keys.map((k) => (
-        <HapticPressable key={k} onPress={() => onPress(k)} style={styles.key}>
-          <Text style={styles.keyText}>{k}</Text>
-        </HapticPressable>
-      ))}
+      {keys.map((k) => {
+        let testID =  `pressable-${k}`
+        if(testID=== `pressable-.`) testID = "pressable-dot"
+        return(
+          <HapticPressable 
+            testID={testID}
+            key={k} 
+            onPress={() => onPress(k)} style={styles.key}>
+            <Text style={styles.keyText}>{k}</Text>
+          </HapticPressable>
+        )
+      })}
     </View>
   );
 }
