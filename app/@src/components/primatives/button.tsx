@@ -6,38 +6,52 @@ import { typography } from '@/@src/theme/typography';
 export const Button: React.FC<{ 
   label: string; 
   onPress: () => void; 
+  width?: number
   testID?: string;
   progress?: boolean;
+  backgroundColor?: string;
+  color: string;
 }> = ({
   label,
   onPress,
+  width = 150,
   testID,
-  progress = false
+  progress = false,
+  backgroundColor = colors.buttonBackground,
+  color = colors.buttonTextBackground,
 }) => (
-  <Pressable testID={testID} style={styles.button} onPress={onPress}>
+  <Pressable testID={testID} style={[styles.button, {
+    width,
+    backgroundColor
+  }]} onPress={onPress}>
     {
       progress?
       <ActivityIndicator />
       :
-      <Text style={styles.buttonText}>{label}</Text>
+      <Text 
+        style={[
+          styles.buttonText,
+          {
+            color,
+          }
+        ]}>
+          {label}
+      </Text>
     }
-    
   </Pressable>
 );
 
 
 const styles = StyleSheet.create({
   button: {
-    width: 200,
     marginTop: 8,
     borderRadius: 999,
-    backgroundColor: colors.buttonBackground,
     paddingVertical: 12,
     alignItems: 'center',
     alignSelf: "center"
   },
   buttonText: {
-    color: colors.buttonTextBackground,
+    
     ...typography.button,
     fontWeight: '700',
   },

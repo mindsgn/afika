@@ -14,7 +14,14 @@ export default function ActionCard() {
             router.push("/send")
           }}
         />
-        <View />
+        <Button
+          label="RECIEVE"
+          backgroundColor='none'
+          color="#1f1f1f"
+          onPress={() => {
+            router.push("/recieve")
+          }}
+        />
       </View>
     );
 }

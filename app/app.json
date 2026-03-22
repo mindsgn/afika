@@ -35,6 +35,17 @@
         {
           "contactsPermission": "Allow $(PRODUCT_NAME) to access your contacts. $(PRODUCT_NAME) needs this so it may send money to your contacts"
         }
+      ],
+      [
+        "expo-sharing",
+        {
+          "ios": {
+            "enabled": true
+          },
+          "android": {
+            "enabled": true
+          }
+        }
       ]
     ],
     "experiments": {
