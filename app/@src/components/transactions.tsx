@@ -12,25 +12,10 @@ import { useEffect } from 'react';
 export default function TransactionList() {
   const { transactions, setTransactions, walletAddress } = useWallet();
 
-  useEffect(() => {
-    const bootstrap = async () => {
-      try {
-        const response = await pocketBackend.listTransactions(walletAddress);
-        const { transactions } = response
-        //@ts-expect-error unkown type error
-        const transactionList = transactions as WalletTransaction[];
-        setTransactions(transactionList)
-      } catch {
-      }
-    };
-
-    bootstrap();
-  }, [walletAddress, setTransactions]);
-  
   const usdcTransactions = useMemo(() => {
-    return transactions.filter((tx: any) => tx.tokenSymbol === "USDC");
+    return transactions.filter((tx: any) => tx.symbol === "USDC" || tx.tokenSymbol === "USDC");
   }, [transactions]);
-
+  
   return (
     <View testID="transaction-list">
       <FlashList

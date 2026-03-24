@@ -23,21 +23,18 @@ export default function AmountInput({
   currency,
   onChange,
   name,
-  phoneNumber,
   handleCompleteSwipe
 }: {
   amount: string;
   currency: string;
   onChange: (value: string) => void;
   name: string,
-  phoneNumber: string
   handleCompleteSwipe: () => void
 }) {
-  const { walletAddress, balances,  } = useWallet();
+  const { balances,  } = useWallet();
   const { currency: localeCurrency,  } = useFxRate()
   const [ displayBalance, setDisplayBalance, ] = useState('');
   const { locale, rate } = useFxRate();
-  const [ usdcBalance, setUsdcBalance] = useState(0);
   const translateX = useSharedValue(0);
   
   const usdcValue = useMemo(() => {
@@ -48,7 +45,7 @@ export default function AmountInput({
   }, [balances]);
     
   useEffect(() => {
-    setUsdcBalance(usdcValue);
+    // setUsdcBalance(usdcValue);
     const usdString = usdcValue.toString();
     const converted = convertUSD(usdString, rate);
     const value = converted ?? usdcValue;
@@ -90,12 +87,20 @@ export default function AmountInput({
     <View style={styles.container}>
       <View style={{flex: 1}}>
       <View style={styles.avatar}>
-        <Avatar seed={name} size={40}/>
+        <View
+          style={{
+            alignSelf: "center",
+          }}>
+          <Avatar 
+            seed={name} size={40}
+          />
+        </View>
+        
         <View style={{
           paddingTop: 20,
           alignSelf: "center"
         }}>
-          <Body>Seni</Body>
+          <Body>{name}</Body>
         </View>
       </View>
         

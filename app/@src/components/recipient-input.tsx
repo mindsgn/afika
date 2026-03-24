@@ -78,9 +78,11 @@ export default function RecipientInput({
         {suggestions.length > 0 && (
           <View style={styles.suggestions}>
             {suggestions.map((item, index) => {
-              if (item.phone === "" && item.walletAddress === "")  return null
+
+              if (item.walletAddress === "")  return null
+              
               return(
-                  <HapticPressable
+                <HapticPressable
                     testID={`pressable-${index}`}
                     key={item.uuid}
                     style={styles.suggestionItem}
@@ -113,8 +115,8 @@ export default function RecipientInput({
                         </Text>
                       }
                     </View>
-                  </HapticPressable>
-            )
+                </HapticPressable>
+              )
             })}
           </View>
         )}

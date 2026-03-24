@@ -34,7 +34,7 @@ export default function RecipientForm({
   const [recipientPhone, setRecipientPhone] = useState("");
   const [recipientId, setRecipientId] = useState<string | null>(null);
   const [saving, setSaving] = useState<boolean>(false)
-
+  
   const saveRecipeint = async() => {
     setSaving(true)
     try{
@@ -54,24 +54,22 @@ export default function RecipientForm({
       if (!payload.name) {
         throw new Error("Name is required");
       }
-
-      if(!isAddress(recipientAddress)){
-        return
+      
+      const clean = recipientAddress.trim();
+      
+      if(!isAddress(clean)){
+        throw new Error("ethereum address is required");
       }
 
-      if (recipientId) {
-        const updated = await PocketCore.updateRecipient(JSON.stringify(payload));
-        const parsed = JSON.parse(updated || "{}") as Recipient;
-        if (parsed?.uuid) setRecipientId(parsed.uuid);
-      } else {
-        const saved = await PocketCore.saveRecipient(JSON.stringify(payload));
-        const parsed = JSON.parse(saved || "{}") as Recipient;
-        if (parsed?.uuid) setRecipientId(parsed.uuid);
-      }
-    } catch {
+      const saved = await PocketCore.saveRecipient(JSON.stringify(payload));
+      const parsed = JSON.parse(saved || "{}") as Recipient;
+      if (parsed?.uuid) setRecipientId(parsed.uuid);
+      
+    } catch (error){
+      console.log(error)
     } finally{
       setSaving(false);
-     router.replace("/send")
+      router.replace("/send")
     }
   }
 

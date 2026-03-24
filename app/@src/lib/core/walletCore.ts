@@ -70,12 +70,13 @@ let initPromise: Promise<string> | null = null;
 
 export async function ensureWalletCoreReady(): Promise<string> {
   if (initPromise) return initPromise;
-  initPromise = (async () => {
+    initPromise = (async () => {
     const dataDir = new Directory(Paths.document);
     await PocketCore.initWalletSecure(dataDir.uri);
     const address = await PocketCore.openOrCreateWallet('Main Wallet');
 
     const { rpcUrl, chainId } = NETWORK_CONFIG[DEFAULT_NETWORK];
+    
     if (!rpcUrl) {
       throw new Error(`missing rpc url for network ${DEFAULT_NETWORK}`);
     }

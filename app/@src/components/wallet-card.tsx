@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import useWallet from '../store/wallet';
 import { formatCurrency, convertUSD } from '@/@src/lib/locale/currency';
 import { useFxRate } from '@/@src/lib/locale/useFxRate';
@@ -7,9 +7,9 @@ import { Balance } from './primatives/balance';
 import { Card } from './primatives/card';
 
 export default function WalletCard() {
-  const { walletAddress, balances } = useWallet();
+  const {  balances } = useWallet();
   const { locale, currency, rate } = useFxRate();
-  const [usdcBalance, setUsdcBalance] = useState(0);
+  // const [ usdcBalance, setUsdcBalance] = useState(0);
   const [displayBalance, setDisplayBalance] = useState('');
   
   const usdcValue = useMemo(() => {
@@ -20,14 +20,13 @@ export default function WalletCard() {
   }, [balances]);
   
   useEffect(() => {
-    setUsdcBalance(usdcValue);
+    // setUsdcBalance(usdcValue);
     const usdString = usdcValue.toString();
     const converted = convertUSD(usdString, rate);
     const value = converted ?? usdcValue;
     setDisplayBalance(formatCurrency(value, locale, currency));
   }, [usdcValue, locale, currency, rate]);
   
-
   return (
     <Card testID="wallet-card" style={styles.container}>
       <View>

@@ -11,6 +11,7 @@ const styles = StyleSheet.create({
   title: {
       color: colors.textPrimary,
       ...typography.body,
+      alignSelf: "center",
   },
 });
 
