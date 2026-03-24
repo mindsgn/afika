@@ -1,6 +1,8 @@
-# Pocket Money
+![Description](assets/cover.png)
 
-Pocket Money is a non-custodial mobile wallet: a Go EOA core (via `gomobile`), an Expo app, and a lightweight backend API that caches balances, transactions, and FX rates.
+# Afika
+
+AFIKA is a non-custodial mobile wallet: a Go EOA core (via `gomobile`), an Expo app, and a lightweight backend API that caches balances, transactions, and FX rates.
 
 ## Monorepo map
 
