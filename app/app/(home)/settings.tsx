@@ -5,8 +5,8 @@ import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
 import { Screen, Title, BodyText, PrimaryButton } from '@/@src/components/Primitives';
 import useWallet from '@/@src/store/wallet';
-import { clearAllSecrets, verifyStoredPin, savePin } from '@/@src/lib/security/sensitiveAuth';
-import PinAuthSheet from '@/@src/components/PinAuthSheet';
+import { clearAllSecrets, verifyStoredPin, savePin } from '@/@src/lib/security/sensitive-auth';
+import PinAuthSheet from '@/@src/components/pin-auth-sheet';
 
 const BIOMETRIC_KEY = 'biometric_enabled';
 

@@ -4,9 +4,17 @@ import WalletCard from '@/@src/components/wallet-card';
 import TransactionList from '@/@src/components/transactions';
 import ActionCard from '@/@src/components/action';
 import { useFirebaseSync } from '@/@src/lib/firebase/useFirebaseSync';
+import useWallet from '@/@src/store/wallet';
 
 export default function Home() {
+  const { walletAddress } = useWallet();
   useFirebaseSync();
+
+  console.log('🔧 [DEBUG] Home screen - walletAddress:', walletAddress);
+  console.log('🔧 [DEBUG] Home screen - address type:', typeof walletAddress);
+  console.log('🔧 [DEBUG] Home screen - address length:', walletAddress?.length);
+  console.log('🔧 [DEBUG] Home screen - address is null:', walletAddress === null);
+  console.log('🔧 [DEBUG] Home screen - address is empty string:', walletAddress === '');
 
   return (
     <Screen>

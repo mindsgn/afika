@@ -5,13 +5,13 @@ import RecipientInput from "@/@src/components/recipient-input";
 import { useFxRate } from '@/@src/lib/locale/useFxRate';
 import { SendState, SendMethod } from "@/@src/types/send";
 import { nextState, prevState } from "@/@src/store/send";
-import { Button } from "@/@src/components/primatives/button";
+import { Button } from "@/@src/components/primitives/button";
 import PocketCore, { Recipient } from "@/modules/pocket-module";
 import { ensureWalletCoreReady } from "@/@src/lib/core/walletCore";
-import { sendUSDC } from "@/@src/lib/ethereum/sendUSDC";
+import { sendUSDC } from "@/@src/lib/ethereum/send-usdc";
 import useWallet from "@/@src/store/wallet";
 import BottomSheet, { BottomSheetRefProps } from "@/@src/components/bottom-sheet";
-import { Title } from "@/@src/components/primatives/title";
+import { Title } from "@/@src/components/primitives/title";
 import { useRouter } from "expo-router";
 import RecipientForm from "@/@src/components/recipient-form";
 import { convertLocalAmountToUsd } from "@/@src/lib/locale/currency";
@@ -31,7 +31,7 @@ export default function SendFlow() {
   const [destination, setDestination] = useState("");
   const ref = useRef<BottomSheetRefProps>(null);
   const onPress = () => {
-    router.replace("/recepient")
+    router.replace("/recipient")
   };
 
   const next = () => setState(nextState(state));
@@ -95,12 +95,19 @@ export default function SendFlow() {
           currency="R"
           onChange={setAmount}
           name={recipientName}
-          phoneNumber={recipientPhone}
         />
       )}
 
       {state === "sending" && (
-        <ActivityIndicator />
+         <View>
+          <View style={{
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center"
+          }}>
+            <ActivityIndicator />
+          </View>
+        </View>
       )}
 
       {state === "error" && (
@@ -111,6 +118,12 @@ export default function SendFlow() {
           }}
         >
           <Title>ERROR</Title>
+          <Button
+            label="RETRY"
+            onPress={() => {
+              router.push("/send")
+            }}  
+          />
         </View>
       )}
 
@@ -130,7 +143,6 @@ export default function SendFlow() {
             }}  
           />
         </View>
-        
       )}
     </View>
   );

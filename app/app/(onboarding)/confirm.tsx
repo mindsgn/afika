@@ -3,16 +3,17 @@ import {
   View,
   Text,
   StyleSheet,
+  ActivityIndicator
 } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { useRouter } from 'expo-router';
 import PocketCore from "@/modules/pocket-module";
 import { Directory, Paths } from 'expo-file-system';
 import useWallet from '@/@src/store/wallet';
-import { savePin, markOnboarded } from '@/@src/lib/security/sensitiveAuth';
-import { Screen } from '@/@src/components/primatives/screen';
-import { Title } from '@/@src/components/primatives/title';
-import { HapticPressable } from '@/@src/components/primatives/haptic-pressable';
+import { savePin, markOnboarded } from '@/@src/lib/security/sensitive-auth';
+import { Screen } from '@/@src/components/primitives/screen';
+import { Title } from '@/@src/components/primitives/title';
+import { HapticPressable } from '@/@src/components/primitives/haptic-pressable';
 import upsertWallet, {UpsertData} from '@/@src/lib/firebase/upsert-wallet';
 import { serverTimestamp } from 'firebase/firestore';
 
@@ -50,10 +51,9 @@ export default function PinScreen() {
       await PocketCore.initWalletSecure(dataDir.uri);
       const walletAddress = await PocketCore.openOrCreateWallet('Main Wallet');
       setWalletAddress(walletAddress);
-
       const DEFAULT_NETWORK = process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 'base-mainnet' : 'base-sepolia'
       setNetwork(DEFAULT_NETWORK);
-      
+    
       try {
         const data: UpsertData = {
           address:  walletAddress,
@@ -65,13 +65,32 @@ export default function PinScreen() {
           PhoneLinkedAt:  null,
         }
         await upsertWallet(walletAddress, data);
+      } catch{
+      } finally {
+        await savePin(confirmedPin);
+        await markOnboarded();
+        router.replace('/(home)');
+      }
 
-      } catch{}
-      await savePin(confirmedPin);
-      await markOnboarded();
+    } catch(error){
 
-      router.replace('/(home)');
+    } finally{
+
+    }
+
+    /*
+    try {
+      
+      
+     
+
+      
+      
+     
+
+      
     } catch (error) {
+      console.log(error)
       clearWalletState();
       router.replace({
         pathname: '/error',
@@ -81,7 +100,8 @@ export default function PinScreen() {
         },
       });
     }
-  };
+    */
+  }
 
   useEffect(() => {
     if (confirmationPin.length === PIN_LENGTH) {
@@ -121,15 +141,28 @@ export default function PinScreen() {
     </HapticPressable>
   );
 
+   if (status==="Preparing secure wallet..."){
+      return(
+        <Screen style={[{
+            flex: 1,
+            justifyContent: "center",
+            alignItems: "center"
+        }]}>
+          <ActivityIndicator />
+          <Title>{status}</Title>
+        </Screen>
+      )
+    } 
+
  
    return (
      <Screen style={[styles.container]} testID="unlock-pin-screen">
-          <View style={styles.numberContainer}>
-            <Title>CREATE NEW PIN</Title>
-            <View style={styles.dotsRow}>
-              {Array.from({ length: PIN_LENGTH }).map((_, i) => renderDot(i))}
-            </View>
+      <View style={styles.numberContainer}>
+        <Title>CONFIRM PIN</Title>
+          <View style={styles.dotsRow}>
+            {Array.from({ length: PIN_LENGTH }).map((_, i) => renderDot(i))}
           </View>
+        </View>
     
           <View style={styles.keypad}>
             {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) =>

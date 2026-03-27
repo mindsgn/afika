@@ -11,9 +11,9 @@ import { router } from 'expo-router';
 import PocketCore from '@/modules/pocket-module';
 import { Directory, Paths } from 'expo-file-system';
 import useWallet from '@/@src/store/wallet';
-import { Screen } from '@/@src/components/primatives/screen';
-import { Title } from '@/@src/components/primatives/title';
-import { HapticPressable } from '@/@src/components/primatives/haptic-pressable';
+import { Screen } from '@/@src/components/primitives/screen';
+import { Title } from '@/@src/components/primitives/title';
+import { HapticPressable } from '@/@src/components/primitives/haptic-pressable';
 import upsertWallet, { UpsertData } from '@/@src/lib/firebase/upsert-wallet';
 import { serverTimestamp } from 'firebase/firestore';
 
@@ -52,11 +52,11 @@ export default function PasswordScreen() {
 
         await upsertWallet(walletAddress, data);
       } catch {
-      }
-
-      setWalletAddress(walletAddress);
-      setNetwork(DEFAULT_NETWORK);
-      router.replace('/(home)');
+      } finally {
+        setWalletAddress(walletAddress);
+        setNetwork(DEFAULT_NETWORK);
+        router.replace('/(home)');
+      }      
     } catch (error) {
       clearWalletState();
       router.replace({

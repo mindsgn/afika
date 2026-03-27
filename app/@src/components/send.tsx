@@ -1,6 +1,6 @@
 // lib/send/sendTransaction.ts
 
-import { sendUSDC } from "@/@src/lib/ethereum/sendUSDC";
+import { sendUSDC } from "@/@src/lib/ethereum/send-usdc";
 import { pocketBackend } from "@/@src/lib/api/pocketBackend";
 import type { NetworkKey } from "@/@src/lib/core/walletCore";
 

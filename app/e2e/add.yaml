@@ -2,13 +2,31 @@ appId: mindsgn.studio.pockt
 ---
 - launchApp
 - startRecording: add-contact 
-- waitForAnimationToEnd:
-    timeout: 2000
-- tapOn: "1" 
-- tapOn: "1" 
-- tapOn: "1" 
-- tapOn: "1" 
-- tapOn: "1" 
-- waitForAnimationToEnd:
-    timeout: 3000
+- runFlow:
+        when:
+            visible: "ENTER PIN"
+        commands:
+            - tapOn: "1"
+            - tapOn: "1"
+            - tapOn: "1"
+            - tapOn: "1"
+            - tapOn: "1"
+- runFlow:
+        when:
+            visible: "SEND"
+        commands:
+            - tapOn: "SEND"
+- extendedWaitUntil:
+    visible: "+"
+    timeout: 10000
+- tapOn: "+" 
+- extendedWaitUntil:
+    visible: "Add Recipient"
+    timeout: 10000
+- inputText:
+    id: "Add Recipient" 
+    inputRandomPersonName: 10
+- inputText:
+    id: "recipient-address-input" 
+    text: "user@example.com"
 - stopRecording

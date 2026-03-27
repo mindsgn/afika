@@ -16,12 +16,13 @@ export interface UpsertData {
 export default async function upsertWallet(walletAddress: string, data: UpsertData) {
     const db = getFirestoreDb();
     if (!db || !walletAddress) return;
-
-    try {
-        await setDoc(doc(db, `wallets/${walletAddress}`), {
-            ...data
-        }, {merge: true});
-    } catch {
-        
-    }
+    setDoc(doc(db, `wallets/${walletAddress}`), {
+    ...data
+    }, {merge: true})
+    .catch((error) => {
+        console.log(error)
+    })
+    .finally(() => {
+        return
+    });
 }

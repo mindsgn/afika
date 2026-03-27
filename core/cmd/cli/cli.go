@@ -31,7 +31,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	wc := &core.WalletCore{}
+	wc := core.NewWalletCore()
 
 	dataDir := envOrDefault("POCKET_DATA_DIR", defaultDataDir())
 	masterKeyB64 := envOrDefault("POCKET_MASTER_KEY_B64", "")

@@ -1,6 +1,6 @@
 import { StyleSheet, TouchableOpacity, View, Text } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Button } from '@/@src/components/primatives/button';
+import { Button } from '@/@src/components/primitives/button';
 
 export default function ActionCard() {
     const router = useRouter();
@@ -10,16 +10,17 @@ export default function ActionCard() {
         testID="action-container">
         <Button
           label="SEND"
+          color="white"
           onPress={() => {
             router.push("/send")
           }}
         />
         <Button
-          label="RECIEVE"
+          label="RECEIVE"
           backgroundColor='none'
           color="#1f1f1f"
           onPress={() => {
-            router.push("/recieve")
+            router.push("/receive")
           }}
         />
       </View>

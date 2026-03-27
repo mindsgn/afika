@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
-import { Title } from './primatives/title';
-import { SubButton } from './primatives/sub-button';
+import { Title } from './primitives/title';
+import { SubButton } from './primitives/sub-button';
 
 export default function TransactionHeader() {
   return (

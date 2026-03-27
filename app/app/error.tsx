@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { HapticPressable } from '@/@src/components/primatives/haptic-pressable';
+import { HapticPressable } from '@/@src/components/primitives/haptic-pressable';
 
 export default function ErrorScreen() {
   const router = useRouter();

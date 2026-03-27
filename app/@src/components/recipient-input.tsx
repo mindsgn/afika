@@ -2,11 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { View, TextInput, StyleSheet, Text, TouchableOpacity } from "react-native";
 import PocketCore, { Recipient } from "@/modules/pocket-module";
 import { SendMethod } from "@/@src/types/send";
-import { Title } from "./primatives/title";
-import { HapticPressable } from "./primatives/haptic-pressable";
+import { Title } from "./primitives/title";
+import { HapticPressable } from "./primitives/haptic-pressable";
 import Avatar from "./avatar";
 // import { getWalletAddressByPhone } from "@/@src/lib/firebase/wallet-address";
+import { FlashList } from "@shopify/flash-list";
+
 import { isAddress, getAddress } from 'ethers';
+import { ScrollView } from "react-native-gesture-handler";
 
 /**
  * Shortens an Ethereum address for UI display.
@@ -19,10 +22,9 @@ export const shortenAddress = (address: string, chars = 4): string => {
     return 'Invalid Address';
   }
 
-  // Optional: Use getAddress to ensure the checksum (case-sensitivity) is correct
   const cleanAddress = getAddress(address);
   
-  const start = cleanAddress.substring(0, chars + 2); // Includes '0x'
+  const start = cleanAddress.substring(0, chars + 2); 
   const end = cleanAddress.substring(42 - chars);
   
   return `${start}...${end}`;
@@ -52,10 +54,10 @@ export default function RecipientInput({
   useEffect(() => {
     const getAll = async() => {
       const data = await PocketCore.getAllRecipients()
-      const reciptientList = JSON.parse(data || "[]") as Recipient[]
+      const recipientList = JSON.parse(data || "[]") as Recipient[]
       const map = new Map<string, Recipient>();
 
-      for (const item of [...reciptientList]) {
+      for (const item of [...recipientList]) {
         if (item?.uuid) map.set(item.uuid, item);
       }
 
@@ -74,7 +76,8 @@ export default function RecipientInput({
           <Title>+</Title>
         </TouchableOpacity>
       </View>
-      <View>
+      <ScrollView>
+
         {suggestions.length > 0 && (
           <View style={styles.suggestions}>
             {suggestions.map((item, index) => {
@@ -120,7 +123,7 @@ export default function RecipientInput({
             })}
           </View>
         )}
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -144,14 +147,16 @@ const styles = StyleSheet.create({
   },
   suggestions: {
     width: "100%",
-    borderRadius: 12,
+   
     paddingVertical: 6,
     marginTop: 4,
   },
   suggestionItem: {
     flexDirection: "row",
-    alignItems: "center"
-
+    alignItems: "center",
+     borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    marginVertical: 10,
   },
   suggestionName: {
     fontSize: 14,

@@ -2,13 +2,21 @@ appId: mindsgn.studio.pockt
 ---
 - launchApp
 - startRecording: share 
-- waitForAnimationToEnd:
-    timeout: 2000
-- tapOn: "1" 
-- tapOn: "1" 
-- tapOn: "1" 
-- tapOn: "1" 
-- tapOn: "1" 
-- waitForAnimationToEnd:
-    timeout: 3000
+- runFlow:
+        when:
+            visible: "ENTER PIN"
+        commands:
+            - tapOn: "1"
+            - tapOn: "1"
+            - tapOn: "1"
+            - tapOn: "1"
+            - tapOn: "1"
+- extendedWaitUntil:
+    visible: "RECEIVE"
+    timeout: 10000
+- tapOn: "RECEIVE" 
+- extendedWaitUntil:
+    visible: "SHARE"
+    timeout: 10000
+- tapOn: "SHARE"
 - stopRecording

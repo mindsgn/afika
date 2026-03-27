@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
-import { Title } from './primatives/title';
-import { Body } from './primatives/body';
+import { Title } from './primitives/title';
+import { Body } from './primitives/body';
 
 export default function EmptyTransactionCard() {
   return (

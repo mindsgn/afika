@@ -1,0 +1,23 @@
+appId: mindsgn.studio.pockt
+---
+- launchApp
+- startRecording: new-account 
+- extendedWaitUntil:
+    visible: "CREATE NEW PIN"
+    timeout: 10000
+- tapOn: "1" 
+- tapOn: "1" 
+- tapOn: "1" 
+- tapOn: "1" 
+- tapOn: "1" 
+- extendedWaitUntil:
+    visible: "CONFIRM PIN"
+    timeout: 10000
+- tapOn: "1" 
+- tapOn: "1" 
+- tapOn: "1" 
+- tapOn: "1" 
+- tapOn: "1" 
+- waitForAnimationToEnd:
+    timeout: 3000
+- stopRecording

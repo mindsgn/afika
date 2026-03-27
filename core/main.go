@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +22,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/mindsgn-studio/pocket-money-app/core/internal/database"
 	"github.com/mindsgn-studio/pocket-money-app/core/internal/ethereum"
+
+	_ "github.com/mutecomm/go-sqlcipher/v4"
 )
 
 // ---------------------------------------------------------------------------
@@ -185,6 +188,97 @@ func (w *WalletCore) Init(dataDir, masterKeyB64, kdfSaltB64 string) error {
 	return nil
 }
 
+// TestInitWalletSecure is a simple test function for debugging
+func TestInitWalletSecure(dataDir string) string {
+	wc := NewWalletCore()
+	
+	fmt.Printf("DEBUG: TestInitWalletSecure - Starting test\n")
+	
+	err := wc.InitWalletSecure(dataDir)
+	if err != nil {
+		fmt.Printf("DEBUG: TestInitWalletSecure - Init failed: %v\n", err)
+		return fmt.Sprintf("ERROR: %v", err)
+	}
+	
+	fmt.Printf("DEBUG: TestInitWalletSecure - Init successful, testing wallet creation\n")
+	
+	addr, err := wc.OpenOrCreateWallet("Test Wallet")
+	if err != nil {
+		fmt.Printf("DEBUG: TestInitWalletSecure - Wallet creation failed: %v\n", err)
+		return fmt.Sprintf("ERROR: %v", err)
+	}
+	
+	if addr == "" {
+		fmt.Printf("DEBUG: TestInitWalletSecure - Wallet creation returned empty address\n")
+		return "ERROR: Empty address"
+	}
+	
+	fmt.Printf("DEBUG: TestInitWalletSecure - SUCCESS: %s\n", addr)
+	wc.Close()
+	return addr
+}
+
+// InitWalletSecure initializes the wallet with platform-generated secure key material.
+// This is the mobile-friendly version that doesn't require pre-generated keys.
+func (w *WalletCore) InitWalletSecure(dataDir string) error {
+	fmt.Printf("DEBUG: InitWalletSecure - Starting with dataDir: %s\n", dataDir)
+	
+	// Ensure the directory exists
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		fmt.Printf("DEBUG: InitWalletSecure - Failed to create directory: %v\n", err)
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+	fmt.Printf("DEBUG: InitWalletSecure - Directory created/verified\n")
+	
+	// Generate secure random master key (32 bytes)
+	masterKey := make([]byte, 32)
+	if _, err := rand.Read(masterKey); err != nil {
+		fmt.Printf("DEBUG: InitWalletSecure - Failed to generate master key: %v\n", err)
+		return fmt.Errorf("failed to generate master key: %w", err)
+	}
+	
+	// Generate secure random salt (16 bytes)
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		fmt.Printf("DEBUG: InitWalletSecure - Failed to generate salt: %v\n", err)
+		return fmt.Errorf("failed to generate salt: %w", err)
+	}
+
+	// Debug: Log successful key generation (without exposing the actual keys)
+	fmt.Printf("DEBUG: InitWalletSecure - Generated master key (%d bytes) and salt (%d bytes)\n", len(masterKey), len(salt))
+
+	keystore := &staticSecureKeyStore{masterKey: masterKey, salt: salt}
+	
+	fmt.Printf("DEBUG: InitWalletSecure - Attempting to open database\n")
+	db, err := database.Open(context.Background(), dataDir, keystore)
+	if err != nil {
+		fmt.Printf("DEBUG: InitWalletSecure - Database open failed with error: %v\n", err)
+		fmt.Printf("DEBUG: InitWalletSecure - Error type: %T\n", err)
+		
+		// Try to get more specific error information
+		fmt.Printf("DEBUG: InitWalletSecure - Error details: %s\n", err.Error())
+		
+		return fmt.Errorf("database open failed: %w", err)
+	}
+
+	fmt.Printf("DEBUG: InitWalletSecure - Database opened successfully\n")
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.db != nil {
+		fmt.Printf("DEBUG: InitWalletSecure - Closing existing database\n")
+		if closeErr := w.db.Close(); closeErr != nil {
+			fmt.Printf("DEBUG: InitWalletSecure - Failed to close existing database: %v\n", closeErr)
+		} else {
+			fmt.Printf("DEBUG: InitWalletSecure - Existing database closed successfully\n")
+		}
+	}
+	
+	w.db = db
+	fmt.Printf("DEBUG: InitWalletSecure - WalletCore initialized successfully, db is nil: %v\n", w.db == nil)
+	return nil
+}
+
 // Close releases the database. Safe to call multiple times.
 func (w *WalletCore) Close() error {
 	w.mu.Lock()
@@ -253,21 +347,39 @@ func (w *WalletCore) CreateEthereumWallet(name string) (string, error) {
 
 // OpenOrCreateWallet returns the first stored wallet address (creating one if none exists).
 func (w *WalletCore) OpenOrCreateWallet(name string) (string, error) {
+	fmt.Printf("DEBUG: OpenOrCreateWallet - Starting with name: %s\n", name)
+	
 	db, err := w.getDB()
 	if err != nil {
+		fmt.Printf("DEBUG: OpenOrCreateWallet - getDB failed: %v\n", err)
 		return "", sanitizeError(err)
 	}
+	
+	fmt.Printf("DEBUG: OpenOrCreateWallet - Got database, listing wallets\n")
 	wallets, err := db.ListWallets(context.Background())
 	if err != nil {
+		fmt.Printf("DEBUG: OpenOrCreateWallet - ListWallets failed: %v\n", err)
 		return "", sanitizeError(err)
 	}
+	
+	fmt.Printf("DEBUG: OpenOrCreateWallet - Found %d existing wallets\n", len(wallets))
 	if len(wallets) > 0 {
+		fmt.Printf("DEBUG: OpenOrCreateWallet - Returning existing wallet: %s\n", wallets[0].Address)
 		return wallets[0].Address, nil
 	}
+	
 	if strings.TrimSpace(name) == "" {
 		name = "Main Wallet"
 	}
+	
+	fmt.Printf("DEBUG: OpenOrCreateWallet - Creating new wallet with name: %s\n", name)
 	addr, err := ethereum.CreateNewEthereumWallet(context.Background(), db, name)
+	if err != nil {
+		fmt.Printf("DEBUG: OpenOrCreateWallet - CreateNewEthereumWallet failed: %v\n", err)
+		return "", sanitizeError(err)
+	}
+	
+	fmt.Printf("DEBUG: OpenOrCreateWallet - Created new wallet: %s\n", addr)
 	return addr, sanitizeError(err)
 }
 

@@ -3,8 +3,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import useWallet from '../store/wallet';
 import { formatCurrency, convertUSD } from '@/@src/lib/locale/currency';
 import { useFxRate } from '@/@src/lib/locale/useFxRate';
-import { Balance } from './primatives/balance';
-import { Card } from './primatives/card';
+import { Balance } from './primitives/balance';
+import { Card } from './primitives/card';
 
 export default function WalletCard() {
   const {  balances } = useWallet();

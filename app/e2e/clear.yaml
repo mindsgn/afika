@@ -1,0 +1,4 @@
+appId: mindsgn.studio.pockt
+---
+- clearState: mindsgn.studio.pockt
+- clearKeychain

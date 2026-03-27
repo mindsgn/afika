@@ -1,5 +1,6 @@
 import PocketCore from '@/modules/pocket-module';
 import { Directory, Paths } from 'expo-file-system';
+import { initializeWalletWithFallbacks } from '@/_debug_/android-wallet-fix';
 
 export type NetworkKey =
   | 'eth-mainnet'
@@ -69,22 +70,58 @@ export const USDC_ADDRESS: Record<NetworkKey, string> = {
 let initPromise: Promise<string> | null = null;
 
 export async function ensureWalletCoreReady(): Promise<string> {
-  if (initPromise) return initPromise;
-    initPromise = (async () => {
-    const dataDir = new Directory(Paths.document);
-    await PocketCore.initWalletSecure(dataDir.uri);
-    const address = await PocketCore.openOrCreateWallet('Main Wallet');
+  console.log('🔧 [DEBUG] Starting enhanced wallet core initialization with fallbacks');
+  if (initPromise) {
+    console.log('🔧 [DEBUG] Using existing init promise');
+    return initPromise;
+  }
+  
+  initPromise = (async () => {
+    try {
+      // Use enhanced initialization with multiple fallback methods
+      const address = await initializeWalletWithFallbacks();
+      
+      if (!address) {
+        throw new Error('All wallet initialization methods failed');
+      }
 
-    const { rpcUrl, chainId } = NETWORK_CONFIG[DEFAULT_NETWORK];
-    
-    if (!rpcUrl) {
-      throw new Error(`missing rpc url for network ${DEFAULT_NETWORK}`);
+      console.log('🔧 [DEBUG] Enhanced initialization successful, address:', address);
+      console.log('🔧 [DEBUG] Address type:', typeof address);
+      console.log('🔧 [DEBUG] Address length:', address?.length);
+      
+      if (address.length !== 42) {
+        throw new Error(`Invalid address length: ${address.length}`);
+      }
+      
+      if (!address.startsWith('0x')) {
+        throw new Error('Address does not start with 0x');
+      }
+
+      const { rpcUrl, chainId } = NETWORK_CONFIG[DEFAULT_NETWORK];
+      console.log('🔧 [DEBUG] Network config:', { network: DEFAULT_NETWORK, rpcUrl, chainId });
+      
+      if (!rpcUrl) {
+        throw new Error(`missing rpc url for network ${DEFAULT_NETWORK}`);
+      }
+
+      console.log('🔧 [DEBUG] Registering network');
+      await PocketCore.registerNetwork(DEFAULT_NETWORK, rpcUrl, chainId);
+      console.log('🔧 [DEBUG] Network registered');
+      
+      console.log('🔧 [DEBUG] Registering USDC token');
+      await PocketCore.registerToken(DEFAULT_NETWORK, 'usdc', 'USDC', USDC_ADDRESS[DEFAULT_NETWORK], 6);
+      console.log('🔧 [DEBUG] USDC token registered');
+
+      console.log('🔧 [DEBUG] Enhanced wallet core initialization complete');
+      return address;
+    } catch (error) {
+      console.error('🔧 [DEBUG] Enhanced wallet initialization failed:', error);
+      console.error('🔧 [DEBUG] Error details:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : 'No stack available'
+      });
+      throw error;
     }
-
-    await PocketCore.registerNetwork(DEFAULT_NETWORK, rpcUrl, chainId);
-    await PocketCore.registerToken(DEFAULT_NETWORK, 'usdc', 'USDC', USDC_ADDRESS[DEFAULT_NETWORK], 6);
-
-    return address;
   })();
   return initPromise;
 }

@@ -22,7 +22,6 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "mindsgn.studio.pockt"
     },
@@ -30,6 +29,13 @@
       "expo-router",
       "expo-secure-store",
       "expo-localization",
+       [
+        "expo-file-system",
+        {
+          "supportsOpeningDocumentsInPlace": true,
+          "enableFileSharing": true
+        }
+      ],
       [
         "expo-sharing",
         {

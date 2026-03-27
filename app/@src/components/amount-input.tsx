@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet } from "react-native";
 import AmountKeypad from "@/@src/components/amount-keypad";
 import Avatar from "@/@src/components/avatar";
-import { Body } from "@/@src/components/primatives/body";
+import { Body } from "@/@src/components/primitives/body";
 import useWallet from "@/@src/store/wallet";
 import { useFxRate } from "@/@src/lib/locale/useFxRate";
 import { useState } from "react";

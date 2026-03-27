@@ -54,25 +54,44 @@ const useWallet = create<WalletState>((set) => ({
   network: '',
   balances: [],
   transactions: [],
-  setWalletAddress: (walletAddress) => set({ walletAddress }),
-  setNetwork: (network) => set({ network }),
-  setBalances: (balances) => set({ balances }),
+  setWalletAddress: (walletAddress) => {
+    console.log('🔧 [DEBUG] Setting wallet address:', walletAddress);
+    console.log('🔧 [DEBUG] Address type:', typeof walletAddress);
+    console.log('🔧 [DEBUG] Address length:', walletAddress?.length);
+    set({ walletAddress });
+  },
+  setNetwork: (network) => {
+    console.log('🔧 [DEBUG] Setting network:', network);
+    set({ network });
+  },
+  setBalances: (balances) => {
+    console.log('🔧 [DEBUG] Setting balances:', balances?.length, 'items');
+    set({ balances });
+  },
   setBalancesJson: (json) => {
+    console.log('🔧 [DEBUG] Setting balances from JSON');
     try {
       const balances = JSON.parse(json) as TokenBalance[];
+      console.log('🔧 [DEBUG] Parsed balances:', balances?.length, 'items');
       set({ balances: Array.isArray(balances) ? balances : [] });
-    } catch {
+    } catch (error) {
+      console.error('🔧 [DEBUG] Failed to parse balances JSON:', error);
       set({ balances: [] });
     }
   },
-  setTransactions: (transactions) => set({ transactions }),
-  clearWalletState: () =>
+  setTransactions: (transactions) => {
+    console.log('🔧 [DEBUG] Setting transactions:', transactions?.length, 'items');
+    set({ transactions });
+  },
+  clearWalletState: () => {
+    console.log('🔧 [DEBUG] Clearing wallet state');
     set({
       walletAddress: '',
       network: '',
       balances: [],
       transactions: [],
-    }),
+    });
+  },
 }));
 
 export default useWallet;

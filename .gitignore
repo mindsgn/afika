@@ -33,7 +33,6 @@ cache
 types
 coverage
 *.env
-app/modules/pocket-module/android
 eas.json
 PocketCore.xcframework
 .vscode

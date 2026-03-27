@@ -1,6 +1,6 @@
 import { View, StyleSheet } from "react-native";
-import { Title }  from "@/@src/components/primatives/title"
-import { Button }  from "@/@src/components/primatives/button"
+import { Title }  from "@/@src/components/primitives/title"
+import { Button }  from "@/@src/components/primitives/button"
 import { TextInput,  } from "react-native";
 import MethodSelector from "@/@src/components/selector";
 import { SendMethod } from "@/@src/types/send";
@@ -35,7 +35,7 @@ export default function RecipientForm({
   const [recipientId, setRecipientId] = useState<string | null>(null);
   const [saving, setSaving] = useState<boolean>(false)
   
-  const saveRecipeint = async() => {
+  const saveRecipient = async() => {
     setSaving(true)
     try{
       await ensureWalletCoreReady();
@@ -76,7 +76,7 @@ export default function RecipientForm({
   return (
     <View style={{flex:1}}>
       <View style={{flex:1}}>
-        <Title>Add Reciptient</Title>
+        <Title>Add Recipient</Title>
         <MethodSelector
           value={method} 
           onChange={setMethod}
@@ -90,7 +90,7 @@ export default function RecipientForm({
           }}
         />
         <TextInput
-          testID="recipient-name-input"
+          testID="recipient-address-input"
           style={styles.input}
           placeholder="0x012E..."
           onChangeText={(text: string) => {
@@ -101,7 +101,7 @@ export default function RecipientForm({
       <Button
         label={"Add"}
         progress={saving}
-        onPress={saveRecipeint}
+        onPress={saveRecipient}
       />
     </View>
   );

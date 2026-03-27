@@ -1,0 +1,30 @@
+plugins {
+  id 'com.android.library'
+  id 'kotlin-android'
+}
+
+def safeExt = rootProject.ext
+def compileSdk = safeExt.has('compileSdkVersion') ? safeExt.compileSdkVersion : 34
+def minSdk = safeExt.has('minSdkVersion') ? safeExt.minSdkVersion : 23
+def targetSdk = safeExt.has('targetSdkVersion') ? safeExt.targetSdkVersion : 34
+
+android {
+  namespace "expo.modules.pocketcore"
+  compileSdkVersion compileSdk
+
+  defaultConfig {
+    minSdkVersion minSdk
+    targetSdkVersion targetSdk
+  }
+
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  implementation project(':expo-modules-core')
+  implementation "org.jetbrains.kotlin:kotlin-stdlib"
+  implementation "androidx.security:security-crypto:1.1.0-alpha06"
+  implementation(name: 'core', ext: 'aar')
+}

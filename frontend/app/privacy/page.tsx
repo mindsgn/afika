@@ -1,5 +1,3 @@
-import Image from "next/image";
-
 export default function PrivacyPage() {
   return (
     <div className="max-w-3xl mx-auto px-6 py-16 text-sm text-zinc-700 dark:text-zinc-300">

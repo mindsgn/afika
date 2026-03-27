@@ -75,65 +75,96 @@ export function useFirebaseSync() {
   const networkName = network || DEFAULT_NETWORK;
   const seenTxHashes = useRef<Set<string>>(new Set());
 
+  console.log('🔧 [DEBUG] Firebase sync - walletAddress:', walletAddress);
+  console.log('🔧 [DEBUG] Firebase sync - network:', network);
+  console.log('🔧 [DEBUG] Firebase sync - networkName:', networkName);
+
   useEffect(() => {
   
     let unsubscribeBalances: (() => void) | null = null;
     let unsubscribeTxs: (() => void) | null = null;
 
-    if (!walletAddress) return;
+    console.log('🔧 [DEBUG] Firebase sync useEffect - walletAddress:', walletAddress);
+    console.log('🔧 [DEBUG] Firebase sync useEffect - walletAddress type:', typeof walletAddress);
+
+    if (!walletAddress) {
+      console.log('🔧 [DEBUG] Firebase sync - No wallet address, skipping sync');
+      return;
+    }
+
+    console.log('🔧 [DEBUG] Firebase sync - Starting sync for address:', walletAddress);
 
     const bootstrap = async () => {
       try {
+        console.log('🔧 [DEBUG] Firebase sync - Bootstrapping balances...');
         const db = getFirestoreDb();
-        if(db===null) return
+        if(db===null) {
+          console.error('🔧 [DEBUG] Firebase sync - Database is null');
+          return
+        }
         
+        console.log('🔧 [DEBUG] Firebase sync - Creating balances query for:', `wallets/${walletAddress}/balances`);
         const balancesQuery = query(
           collection(db, `wallets/${walletAddress}/balances`),
         );
 
         unsubscribeBalances = onSnapshot(balancesQuery, async (snapshot) => {
+          console.log('🔧 [DEBUG] Firebase sync - Balance snapshot received:', snapshot.docs.length, 'documents');
           const balances = snapshot.docs.map((docSnap) => mapBalanceDoc(docSnap.data()));
           if (balances.length > 0) {
+            console.log('🔧 [DEBUG] Firebase sync - Setting balances:', balances.length, 'items');
             setBalances(balances);
+          } else {
+            console.log('🔧 [DEBUG] Firebase sync - No balances found');
           }
         })
       } catch(error){
-
+        console.error('🔧 [DEBUG] Firebase sync - Balance bootstrap failed:', error);
       }
 
 
       try {
+        console.log('🔧 [DEBUG] Firebase sync - Bootstrapping transactions...');
         const db = getFirestoreDb();
-        if(db===null) return
+        if(db===null) {
+          console.error('🔧 [DEBUG] Firebase sync - Database is null for transactions');
+          return
+        }
         
+        console.log('🔧 [DEBUG] Firebase sync - Creating transactions query for:', `wallets/${walletAddress}/transactions`);
         const transactionsQuery = query(
           collection(db, `wallets/${walletAddress}/transactions`),
         );
 
         unsubscribeTxs = onSnapshot(transactionsQuery, async (snapshot) => {
+          console.log('🔧 [DEBUG] Firebase sync - Transaction snapshot received:', snapshot.docs.length, 'documents');
           const transactions = snapshot.docs.map((docSnap) => mapBalanceDoc(docSnap.data()));
           const added = snapshot.docChanges()
           .filter((change) => change.type === 'added')
           .map((change) => mapTxDoc(change.doc.data()));
           if (added.length === 0) {
+            console.log('🔧 [DEBUG] Firebase sync - No new transactions');
             return
           }
            
           const newOnes = added.filter((tx) => tx.hash && !seenTxHashes.current.has(`${tx.hash}:${tx.direction}`));
+          console.log('🔧 [DEBUG] Firebase sync - New transactions after filtering:', newOnes.length);
           newOnes.forEach((tx) => seenTxHashes.current.add(`${tx.hash}:${tx.direction}`));
           if (newOnes.length === 0) return;
 
           const current = useWallet.getState().transactions;
+          console.log('🔧 [DEBUG] Firebase sync - Current transactions:', current.length);
           setTransactions(mergeIncomingTransactions(current, newOnes));
         })
       } catch(error){
-
+        console.error('🔧 [DEBUG] Firebase sync - Transaction bootstrap failed:', error);
       }
     }
 
     bootstrap();
     
     return () => {
+      console.log('🔧 [DEBUG] Firebase sync - Cleaning up subscriptions');
       unsubscribeBalances?.();
       unsubscribeTxs?.();
     };

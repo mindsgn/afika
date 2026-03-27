@@ -1,7 +1,7 @@
 // components/tag.tsx
 
 import { Text, StyleSheet } from "react-native";
-import { HapticPressable } from "./primatives/haptic-pressable";
+import { HapticPressable } from "./primitives/haptic-pressable";
 
 export default function Tag({
   label,

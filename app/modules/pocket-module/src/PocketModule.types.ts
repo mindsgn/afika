@@ -18,6 +18,9 @@ export type PocketApi = {
   initWalletSecure(dataDir: string): Promise<void>;
   closeWallet(): Promise<void>;
 
+  // Testing
+  testInitWalletSecure(dataDir: string): Promise<string>;
+
   // Network and token registration
   registerNetwork(name: string, rpcURL: string, chainID: number): Promise<void>;
   registerToken(network: string, identifier: string, symbol: string, address: string, decimals: number): Promise<void>;

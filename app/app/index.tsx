@@ -2,7 +2,7 @@ import { StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
-import { Screen } from '@/@src/components/primatives/screen';
+import { Screen } from '@/@src/components/primitives/screen';
 
 export default function App() {
   const router = useRouter();

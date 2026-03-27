@@ -2,8 +2,9 @@ appId: mindsgn.studio.pockt
 ---
 - launchApp
 - startRecording: unlock 
-- waitForAnimationToEnd:
-    timeout: 2000
+- extendedWaitUntil:
+    visible: "ENTER PIN"
+    timeout: 10000
 - tapOn: "1" 
 - tapOn: "1" 
 - tapOn: "1" 

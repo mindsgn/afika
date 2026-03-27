@@ -4,7 +4,7 @@ import PocketCore from '@/modules/pocket-module';
 import { Directory, Paths } from 'expo-file-system';
 import { formatCurrency, convertUSD } from '@/@src/lib/locale/currency';
 import { useFxRate } from '@/@src/lib/locale/useFxRate';
-import { HapticPressable } from '@/@src/components/primatives/haptic-pressable';
+import { HapticPressable } from '@/@src/components/primitives/haptic-pressable';
 
 const DEFAULT_NETWORK: 'base-mainnet' | 'base-sepolia' = process.env.EXPO_PUBLIC_APP_ENV === 'production' ? 'base-mainnet' : 'base-sepolia';
 

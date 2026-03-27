@@ -12,8 +12,8 @@ export default function RootLayout() {
         <Stack.Screen name="(home)" options={{ headerShown: false }} />
         <Stack.Screen name="send" options={{ headerShown: false }} />
         <Stack.Screen name="error" options={{ headerShown: false }} />
-        <Stack.Screen name="recepient" options={{ headerShown: false }} />
-        <Stack.Screen name="recieve" options={{ headerShown: false }} />
+        <Stack.Screen name="recipient" options={{ headerShown: false }} />
+        <Stack.Screen name="receive" options={{ headerShown: false }} />
       </Stack>
     </GestureHandlerRootView>
   );
