@@ -90,62 +90,7 @@ export default function Settings() {
 
   return (
     <Screen testID="settings-screen" style={styles.screen}>
-      <Title>Settings</Title>
-
-      {/* Security Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionHeader}>Security</Text>
-
-        {biometricAvailable && (
-          <View style={styles.row}>
-            <BodyText style={styles.rowLabel}>Face ID / Touch ID</BodyText>
-            <Switch
-              testID="biometric-toggle"
-              value={biometricEnabled}
-              onValueChange={toggleBiometric}
-              trackColor={{ false: '#2A2A36', true: '#4F7FFF' }}
-              thumbColor="#fff"
-            />
-          </View>
-        )}
-
-        <TouchableOpacity
-          testID="change-pin-button"
-          style={styles.rowButton}
-          onPress={handleChangePinStart}
-        >
-          <BodyText style={styles.rowLabel}>Change PIN</BodyText>
-          <Text style={styles.chevron}>›</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          testID="link-phone-button"
-          style={styles.rowButton}
-          onPress={() => router.push('/(home)/link-phone')}
-        >
-          <BodyText style={styles.rowLabel}>Link Phone Number (Level 1)</BodyText>
-          <Text style={styles.chevron}>›</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Danger Section */}
-      <View style={[styles.section, styles.dangerSection]}>
-        <Text style={styles.sectionHeader}>Danger Zone</Text>
-        <View style={styles.dangerButtonWrapper}>
-          <PrimaryButton
-            testID="reset-wallet-button"
-            label="Reset Wallet"
-            onPress={handleResetWallet}
-          />
-        </View>
-      </View>
-
-      <PinAuthSheet
-        visible={changePinVisible}
-        title={changePinStep === 'current' ? 'Enter current PIN' : 'Enter new PIN'}
-        onConfirm={handleChangePinConfirm}
-        onCancel={handleChangePinCancel}
-      />
+      
     </Screen>
   );
 }
