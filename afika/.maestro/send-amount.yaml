@@ -1,0 +1,62 @@
+appId: mindsgn.studio.pockt
+---
+- launchApp
+- assertVisible:
+    id: "portfolio-screen"
+
+# Deep-link straight to the send amount keypad.
+- openLink: "afika://send/amount?address=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
+- assertVisible:
+    id: "send-amount-screen"
+- assertVisible:
+    id: "amount-keypad"
+
+# The recipient shows on the account pill.
+- assertVisible:
+    id: "account-selector"
+- assertVisible: ".*0xd8dA\\.\\.\\.6045.*"
+
+# Nothing typed yet: empty display and a CTA that cannot have enabled yet.
+- assertVisible: ".*\\$0\\.00.*"
+- assertVisible:
+    id: "create-button"
+
+# Typing one dollar is only accepted when the wallet holds at least 1 USDC.
+- tapOn:
+    id: "key-1"
+
+# With funds: the amount displays and the CTA enables.
+- runFlow:
+    when:
+      visible: ".*\\$1\\.00.*"
+    commands:
+      - assertVisible:
+          id: "create-button"
+          enabled: true
+      # Backspace returns to the empty state and disables the CTA again.
+      - tapOn:
+          id: "key-backspace"
+      - assertVisible: ".*\\$0\\.00.*"
+      - assertNotVisible:
+          id: "create-button"
+          enabled: true
+      # Input keeps working after clearing.
+      - tapOn:
+          id: "key-1"
+      - assertVisible: ".*\\$1\\.00.*"
+      - assertVisible:
+          id: "create-button"
+          enabled: true
+
+# Without funds (or below 1 USDC): the key press is rejected in place.
+- runFlow:
+    when:
+      notVisible: ".*\\$1\\.00.*"
+    commands:
+      - assertVisible: ".*\\$0\\.00.*"
+      - assertNotVisible:
+          id: "create-button"
+          enabled: true
+
+# Live submission requires E2E_LIVE=1 and a funded wallet.
+# Never tap create-button without it: it sends real USDC.

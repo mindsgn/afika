@@ -1,17 +1,16 @@
-import { useMemo, useState, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { useLocalSearchParams, router } from "expo-router";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Alert,
-} from "react-native";
+import { Alert, StyleSheet, View } from "react-native";
 import { encodeFunctionData, erc20Abi } from "viem";
 import { useEmbeddedEthereumWallet } from "@privy-io/expo";
 import { SEND_TOKEN } from "@/constants/tokens";
 import { useWalletBalances } from "@/hooks/use-wallet-balances";
 import { useKernelClient } from "@/hooks/use-Kernal";
-import { parseTokenAmount, sanitizeDecimalInput } from "@/lib/amount";
+import {
+  keypadMaxFromBalance,
+  parseTokenAmount,
+  sanitizeDecimalInput,
+} from "@/lib/amount";
 import {
   buildPendingTransactionId,
   createPendingTransaction,
@@ -19,29 +18,31 @@ import {
 } from "@/lib/transactions";
 import { shortenAddress, getActiveWalletAddress } from "@/lib/wallet";
 import { useWallet } from "@/store/wallet";
-import { KeyboardAvoidingView } from "react-native";
-import AmountInput from "@/components/amount-input";
+import { AmountKeypad } from "@/components/keypad";
+import { colors } from "@/theme";
 
 export default function SendAmountScreen() {
   const { address } = useLocalSearchParams<{ address: string }>();
   const { wallets } = useEmbeddedEthereumWallet();
   const wallet = wallets?.[0];
-  const { kernelClient, loading: kernelLoading } = useKernelClient(wallet);
+  const { kernelClient } = useKernelClient(wallet);
   const walletStore = useWallet();
   const activeWalletAddress = getActiveWalletAddress(walletStore);
-  const { balanceMap, loading: balancesLoading } =
-    useWalletBalances(activeWalletAddress);
+  const { balanceMap } = useWalletBalances(activeWalletAddress);
   const usdcBalance = balanceMap.USDC;
 
-  const [amount, setAmount] = useState("");
   const sendingRef = useRef(false);
 
   const shortAddress = useMemo(() => shortenAddress(address), [address]);
   const availableAmount = usdcBalance?.amount || "0";
+  const maxAmount = useMemo(
+    () => keypadMaxFromBalance(availableAmount),
+    [availableAmount],
+  );
 
-  const validateAmount = () => {
+  const validateAmount = (value: string) => {
     try {
-      const parsedAmount = parseTokenAmount(amount, SEND_TOKEN.decimals);
+      const parsedAmount = parseTokenAmount(value, SEND_TOKEN.decimals);
       const parsedBalance = parseTokenAmount(
         availableAmount,
         SEND_TOKEN.decimals,
@@ -59,8 +60,10 @@ export default function SendAmountScreen() {
     }
   };
 
-  const handleSend = async () => {
-    const validationError = validateAmount();
+  const handleSend = async (value: string) => {
+    if (sendingRef.current) return;
+
+    const validationError = validateAmount(value);
     if (validationError) {
       Alert.alert("Invalid amount", validationError);
       return;
@@ -74,7 +77,7 @@ export default function SendAmountScreen() {
       return;
     }
 
-    const normalizedAmount = sanitizeDecimalInput(amount);
+    const normalizedAmount = sanitizeDecimalInput(value);
     const timestampMs = Date.now();
     const pendingDocId = buildPendingTransactionId("send");
 
@@ -172,86 +175,22 @@ export default function SendAmountScreen() {
     sendingRef.current = false;
   };
 
-  const amountError = amount ? validateAmount() : null;
-
   return (
-    <KeyboardAvoidingView style={styles.container} testID="send-amount-screen">
-      {/*
-        <View style={styles.header}>
-          <Text style={styles.title}>Send USDC</Text>
-          <Text style={styles.subtitle}>Sending to {shortAddress}</Text>
-          <Text style={styles.balanceText}>
-            Available: {availableAmount} USDC
-          </Text>
-          {amountError ? (
-            <Text style={styles.errorText}>{amountError}</Text>
-          ) : null}
-        </View>
-       */}
-      <AmountInput
-        amount={amount}
-        currency={"USDC"}
-        onChange={setAmount}
-        name={shortAddress}
-        handleCompleteSwipe={handleSend}
+    <View style={styles.container} testID="send-amount-screen">
+      <AmountKeypad
+        max={maxAmount}
+        currencySymbol="$"
+        accountLabel={shortAddress || "Recipient"}
+        ctaLabel="Send USDC"
+        onSubmit={(value) => handleSend(String(value))}
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    backgroundColor: "#F4F5F7",
-  },
-  header: {
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 34,
-    fontWeight: "800",
-    color: "#111",
-  },
-  subtitle: {
-    marginTop: 6,
-    fontSize: 16,
-    color: "#666",
-  },
-  balanceText: {
-    marginTop: 10,
-    fontSize: 14,
-    color: "#475569",
-  },
-  errorText: {
-    marginTop: 8,
-    fontSize: 14,
-    color: "#B91C1C",
-  },
-  loadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginBottom: 12,
-  },
-  loadingText: {
-    color: "#1D4878",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  button: {
-    backgroundColor: "#1D4878",
-    paddingVertical: 18,
-    borderRadius: 24,
-    alignItems: "center",
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    fontWeight: "800",
+    backgroundColor: colors.surface,
   },
 });

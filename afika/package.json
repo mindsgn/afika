@@ -98,7 +98,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "doctor": "npx react-doctor@latest",
-    "test": "node --experimental-strip-types --test lib/*.test.ts",
+    "test": "node --experimental-strip-types --test lib/*.test.ts components/**/*.test.ts",
     "maestro": "maestro test .maestro"
   },
   "expo": {
