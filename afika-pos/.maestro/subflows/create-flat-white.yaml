@@ -1,0 +1,82 @@
+appId: phumzile.afika.pos
+---
+# Creates "Flat White" (SKU FLATWHITE, R32.00, cost R12.00, 20 in stock).
+#
+# The product form is a three-step Tray wizard: details, price & stock, image.
+# Each group of fields is followed by `product-next`; the last step saves.
+#
+# The numeric keypad has no dismiss key and covers the fields below it. The
+# form dismisses the keyboard on drag, so each entry ends with a short swipe;
+# without it the next tap lands on a keypad button and types into the previous
+# field.
+- tapOn:
+    id: "tab-products"
+- tapOn:
+    id: "add-product"
+
+# Step 1 of 3: name and SKU.
+- extendedWaitUntil:
+    visible:
+      id: "product-name"
+    timeout: 15000
+- tapOn:
+    id: "product-name"
+- inputText: "Flat White"
+- swipe:
+    direction: DOWN
+    duration: 300
+
+- tapOn:
+    id: "product-sku"
+- inputText: "FLATWHITE"
+- swipe:
+    direction: DOWN
+    duration: 300
+- tapOn:
+    id: "product-next"
+
+# Step 2 of 3: price, cost, opening stock and reorder level.
+- extendedWaitUntil:
+    visible:
+      id: "product-price"
+    timeout: 15000
+- tapOn:
+    id: "product-price"
+- inputText: "32.00"
+- swipe:
+    direction: DOWN
+    duration: 300
+
+- tapOn:
+    id: "product-cost"
+- inputText: "12.00"
+- swipe:
+    direction: DOWN
+    duration: 300
+
+- tapOn:
+    id: "product-stock"
+- inputText: "20"
+- swipe:
+    direction: DOWN
+    duration: 300
+
+- tapOn:
+    id: "product-reorder"
+- inputText: "5"
+- swipe:
+    direction: DOWN
+    duration: 300
+- tapOn:
+    id: "product-next"
+
+# Step 3 of 3: optional image, then create.
+- extendedWaitUntil:
+    visible:
+      id: "save-product"
+    timeout: 15000
+- tapOn:
+    id: "save-product"
+
+- assertVisible:
+    id: "manage-FLATWHITE"
